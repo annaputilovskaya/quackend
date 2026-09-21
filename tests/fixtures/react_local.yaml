@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info:
+  title: React App Mock
+  version: 1.0.0
+paths:
+  /projects:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { "$ref": "#/components/schemas/Project" }
+  /projects/{id}:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { "$ref": "#/components/schemas/Project" }
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        title: { type: string }
+        status: { type: string, enum: [todo, doing, done] }
+        updated_at: { type: string, format: date-time }
