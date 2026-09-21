@@ -83,7 +83,7 @@ module = "tests.*"
 strict = false
 
 [[tool.mypy.overrides]]
-module = ["prance", "prance.*"]
+module = "prance"
 ignore_missing_imports = true
 
 [tool.importlinter]
