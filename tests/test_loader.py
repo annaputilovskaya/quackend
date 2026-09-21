@@ -12,7 +12,7 @@ from quackend.loader import (
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_load_openapi_resolves_refs():
+def test_load_openapi_petstore_resolves_refs():
     spec = load_openapi(FIXTURES / "petstore.yaml")
     users_get = next(op for p, m, op in iter_operations(spec) if p == "/users" and m == "get")
     schema = operation_response_schema(users_get)
@@ -20,24 +20,24 @@ def test_load_openapi_resolves_refs():
     assert schema["items"]["properties"]["email"]["format"] == "email"
 
 
-def test_load_openapi_supports_swagger2():
+def test_load_openapi_swagger2_returns_paths():
     spec = load_openapi(FIXTURES / "swagger2.yaml")
     paths = {p for p, _, _ in iter_operations(spec)}
     assert "/legacy" in paths
 
 
-def test_path_resource_ignores_params():
+def test_path_resource_with_params_returns_first_literal():
     assert path_resource("/users/{id}") == "users"
     assert path_resource("/api/v2/users/{user_id}/posts") == "api"
 
 
 @pytest.mark.parametrize("fixture", ["petstore.yaml", "react_local.yaml", "swagger2.yaml"])
-def test_all_fixtures_parse(fixture):
+def test_load_openapi_all_fixtures_return_paths(fixture):
     spec = load_openapi(FIXTURES / fixture)
     assert spec.get("paths")
 
 
-def test_schema_extracted_from_first_2xx():
+def test_operation_response_schema_first_2xx_returns_array():
     spec = load_openapi(FIXTURES / "petstore.yaml")
     users_get = next(op for p, m, op in iter_operations(spec) if p == "/users" and m == "get")
     assert operation_response_schema(users_get)["type"] == "array"

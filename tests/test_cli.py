@@ -8,7 +8,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 runner = CliRunner()
 
 
-def test_routes_command_lists_paths():
+def test_routes_command_petstore_prints_paths_and_methods():
     result = runner.invoke(app, ["routes", str(FIXTURES / "petstore.yaml")])
     assert result.exit_code == 0
     assert "/users" in result.stdout
