@@ -41,3 +41,32 @@ def test_schema_extracted_from_first_2xx():
     spec = load_openapi(FIXTURES / "petstore.yaml")
     users_get = next(op for p, m, op in iter_operations(spec) if p == "/users" and m == "get")
     assert operation_response_schema(users_get)["type"] == "array"
+
+
+def test_operation_response_schema_non_json_media_returns_none():
+    operation = {
+        "responses": {
+            "200": {
+                "description": "ok",
+                "content": {"text/plain": {"schema": {"type": "string"}}},
+            }
+        }
+    }
+
+    assert operation_response_schema(operation) is None
+
+
+def test_operation_response_schema_mixed_media_returns_json():
+    operation = {
+        "responses": {
+            "200": {
+                "description": "ok",
+                "content": {
+                    "text/plain": {"schema": {"type": "string"}},
+                    "application/json": {"schema": {"type": "object"}},
+                },
+            }
+        }
+    }
+
+    assert operation_response_schema(operation)["type"] == "object"

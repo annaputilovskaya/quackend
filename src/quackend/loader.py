@@ -74,8 +74,10 @@ def operation_response_schema(operation: Mapping[str, Any]) -> dict[str, Any] | 
             continue
         if not (200 <= code < 300):
             continue
-        for media in (responses[raw_status].get("content") or {}).values():
-            schema: dict[str, Any] | None = media.get("schema")
-            if schema:
-                return schema
+        media = (responses[raw_status].get("content") or {}).get("application/json")
+        if not media:
+            continue
+        schema: dict[str, Any] | None = media.get("schema")
+        if schema:
+            return schema
     return None
