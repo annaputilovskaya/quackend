@@ -57,8 +57,21 @@ def iter_operations(spec: Mapping[str, Any]) -> Iterator[tuple[str, str, dict[st
                 yield path_template, method, operation
 
 
+def _json_media(content: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """Return the application/json media object from a v3 content map, if any."""
+    for media_type, media in content.items():
+        if media_type.split(";", 1)[0].strip().lower() == "application/json":
+            result: Mapping[str, Any] = media
+            return result
+    return None
+
+
 def operation_response_schema(operation: Mapping[str, Any]) -> dict[str, Any] | None:
-    """Return the first 2xx application/json response schema of an operation.
+    """Return the first 2xx JSON response schema of an operation.
+
+    Reads the OpenAPI 3 ``content["application/json"]`` entry (media-type
+    parameters such as ``; charset=utf-8`` are ignored) and falls back to the
+    Swagger 2.0 top-level ``schema`` field.
 
     Args:
         operation: a single OpenAPI operation object.
@@ -74,10 +87,11 @@ def operation_response_schema(operation: Mapping[str, Any]) -> dict[str, Any] | 
             continue
         if not (200 <= code < 300):
             continue
-        media = (responses[raw_status].get("content") or {}).get("application/json")
-        if not media:
-            continue
-        schema: dict[str, Any] | None = media.get("schema")
+        response = responses[raw_status]
+        media = _json_media(response.get("content") or {})
+        schema: dict[str, Any] | None = media.get("schema") if media is not None else None
+        if schema is None:
+            schema = response.get("schema")
         if schema:
             return schema
     return None

@@ -70,3 +70,25 @@ def test_operation_response_schema_mixed_media_returns_json():
     }
 
     assert operation_response_schema(operation)["type"] == "object"
+
+
+def test_operation_response_schema_json_with_charset_returns_schema():
+    operation = {
+        "responses": {
+            "200": {
+                "description": "ok",
+                "content": {
+                    "application/json; charset=utf-8": {"schema": {"type": "object"}},
+                },
+            }
+        }
+    }
+
+    assert operation_response_schema(operation)["type"] == "object"
+
+
+def test_operation_response_schema_swagger2_returns_array_schema():
+    spec = load_openapi(FIXTURES / "swagger2.yaml")
+    legacy_get = next(op for p, m, op in iter_operations(spec) if p == "/legacy" and m == "get")
+
+    assert operation_response_schema(legacy_get)["type"] == "array"
