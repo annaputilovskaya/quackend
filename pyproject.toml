@@ -1,0 +1,104 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quackend"
+dynamic = ["version"]
+description = "OpenAPI spec to live mock API in seconds"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Anna Putilovskaya" }]
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "prance>=23.6.21.1",
+    "openapi-spec-validator>=0.7",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "faker>=24",
+    "pydantic>=2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "httpx>=0.27",
+    "mypy>=1.8",
+    "ruff>=0.4",
+    "import-linter>=2",
+]
+
+[project.scripts]
+quackend = "quackend.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quackend"]
+
+[tool.hatch.version]
+path = "src/quackend/__init__.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["src/quackend"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "TID", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+strict = false
+
+[tool.importlinter]
+root_package = "quackend"
+
+[[tool.importlinter.contracts]]
+name = "architecture layers"
+type = "layers"
+layers = [
+    "quackend.cli | quackend.reporting | quackend.server",
+    "quackend.store",
+    "quackend.generator | quackend.loader",
+]
+
+[[tool.importlinter.contracts]]
+name = "cli is thin"
+type = "forbidden"
+source_modules = ["quackend.cli"]
+forbidden_modules = ["quackend.generator", "quackend.store"]
+
+[[tool.importlinter.contracts]]
+name = "server goes through store"
+type = "forbidden"
+source_modules = ["quackend.server"]
+forbidden_modules = ["quackend.generator"]
