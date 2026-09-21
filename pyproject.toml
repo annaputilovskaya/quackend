@@ -93,9 +93,12 @@ root_package = "quackend"
 name = "architecture layers"
 type = "layers"
 layers = [
-    "quackend.cli | quackend.reporting | quackend.server",
+    "quackend.cli",
+    "quackend.reporting",
+    "quackend.server",
     "quackend.store",
-    "quackend.generator | quackend.loader",
+    "quackend.generator",
+    "quackend.loader",
 ]
 
 [[tool.importlinter.contracts]]
