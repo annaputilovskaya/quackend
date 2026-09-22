@@ -28,6 +28,17 @@ def test_list_endpoint_returns_collection():
     assert all("id" in item for item in body)
 
 
+def test_list_endpoint_items_are_flat_user_objects():
+    client, _ = make_client()
+
+    response = client.get("/users")
+
+    assert response.status_code == 200
+    for item in response.json():
+        assert {"name", "email", "role", "active"} <= set(item)
+        assert "value" not in item
+
+
 def test_item_endpoint_by_id():
     client, _ = make_client()
 
