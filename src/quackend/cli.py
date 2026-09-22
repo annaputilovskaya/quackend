@@ -69,3 +69,7 @@ def start(
 def main() -> None:
     """Run the quackend command-line application."""
     app()
+
+
+if __name__ == "__main__":
+    main()
