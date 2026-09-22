@@ -75,6 +75,33 @@ def test_generate_value_one_of_uses_first_branch_with_warning(fake):
     assert isinstance(value, int)
 
 
+def test_generate_value_any_of_uses_first_branch_with_warning(fake):
+    warnings = []
+    schema = {"anyOf": [{"type": "integer"}, {"type": "string"}]}
+    value = generate_value(schema, fake, warn=warnings.append)
+    assert any("oneOf" in w or "anyOf" in w for w in warnings)
+    assert isinstance(value, int)
+
+
+def test_generate_value_all_of_merges_branches(fake):
+    schema = {
+        "allOf": [
+            {"type": "object", "properties": {"a": {"type": "string"}}},
+            {"properties": {"b": {"type": "integer"}}},
+        ]
+    }
+    value = generate_value(schema, fake)
+    assert set(value) == {"a", "b"}
+
+
+def test_generate_value_empty_one_of_returns_none_with_warning(fake):
+    warnings = []
+    schema = {"oneOf": []}
+    value = generate_value(schema, fake, warn=warnings.append)
+    assert value is None
+    assert any("oneOf" in w for w in warnings)
+
+
 def test_generate_value_object_beyond_depth_stops_at_empty(fake):
     schema = {
         "type": "object",

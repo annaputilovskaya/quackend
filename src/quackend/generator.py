@@ -49,14 +49,27 @@ def generate_value(
         return fake.random.choice(schema["enum"])
     if "oneOf" in schema or "anyOf" in schema:
         branches: list[dict[str, Any]] = schema.get("oneOf") or schema.get("anyOf") or []
+        if not branches:
+            if warn:
+                warn("empty oneOf/anyOf, returning null")
+            return None
         branch = next((b for b in branches if b.get("example") is not None), branches[0])
         if warn:
             warn("used first branch of oneOf/anyOf")
         return generate_value(branch, fake, depth + 1, warn)
     if "allOf" in schema:
+        all_branches: list[dict[str, Any]] = schema["allOf"]
+        example_branch = next((b for b in all_branches if b.get("example") is not None), None)
+        if example_branch is not None:
+            return generate_value(example_branch, fake, depth + 1, warn)
         merged: dict[str, Any] = {}
-        for branch in schema["allOf"]:
-            merged.update(branch)
+        for branch in all_branches:
+            branch_props: Any = branch.get("properties")
+            merged_props: Any = merged.get("properties")
+            if isinstance(branch_props, dict) and isinstance(merged_props, dict):
+                merged["properties"] = {**merged_props, **branch_props}
+            else:
+                merged.update(branch)
         return generate_value(merged, fake, depth + 1, warn)
     schema_type = schema.get("type")
     if not schema_type:
