@@ -36,3 +36,5 @@ htmlcov/
 # OS
 Thumbs.db
 .DS_Store
+# scratch (progress ledger, task briefs, review packages)
+.superpowers/
