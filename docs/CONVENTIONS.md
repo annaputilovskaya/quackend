@@ -80,6 +80,9 @@ convention = "google"
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
 [tool.ruff.format]
 quote-style = "double"
 
@@ -97,6 +100,7 @@ strict = false
 
 - `convention = "google"` жёстко фиксирует Google style для докстрингов (вместо ручных ignore).
 - `ban-relative-imports = "all"`: относительные импорты внутри пакета запрещены — только абсолютные `from quackend.* import ...`.
+- `per-file-ignores = { "tests/**" = ["D"] }`: **исключение** — тесты не обязаны иметь докстринги; правило `D` отключено только для `tests/**`. Тесты регулируются §5 (нейминг `test_<unit>_<scenario>_<expected>`, arrange/act/assert), а требование докстрингов §3 относится к публичному API модулей `src/`, а не к тестам.
 - mypy: строгий на `src/`, **умеренный** на `tests/` (override, а не exclude — тесты тоже проверяются, но без строгости); флаги `warn_*` ловят typos в конфиге и устаревшие `# type: ignore`.
 
 Обязательные проверки перед PR (см. §7): `lint-imports`, `ruff check`, `ruff format --check`, `mypy src`, покрытие.
@@ -134,7 +138,7 @@ strict = false
 
 ## 3. Кодовые конвенции
 
-- **Докстринги:** Google style, на английском. Обязательны: модуль (1 строка), публичный класс (1 строка + опциональные секции), публичная функция/метод (параметры, `Returns`, `Raises` при необходимости). Приватные — по желанию. Пример:
+- **Докстринги:** Google style, на английском. Обязательны: модуль (1 строка), публичный класс (1 строка + опциональные секции), публичная функция/метод (параметры, `Returns`, `Raises` при необходимости). Приватные — по желанию. **Исключение:** к тестам (`tests/**`) требование докстрингов не применяется — правило `D` отключено для них в `[tool.ruff.lint.per-file-ignores]` (см. §1.4); тесты регулируются §5. Пример:
 
   ```python
   def load_openapi(source: str | Path) -> dict:

@@ -9,7 +9,8 @@ env/
 !.env.example
 
 # Вспомогательные документы (спеки, планы)
-docs/superpowers/
+docs/
+!docs/CONVENTIONS.md
 
 # Скилы для агентов (локальные инструменты, не для репо)
 .agents/
