@@ -14,3 +14,10 @@ def test_routes_command_petstore_prints_paths_and_methods():
     assert "/users" in result.stdout
     assert "/users/{id}" in result.stdout
     assert "GET" in result.stdout
+
+
+def test_start_command_defined():
+    result = runner.invoke(app, ["start", "--help"])
+    assert result.exit_code == 0
+    assert "--port" in result.stdout
+    assert "--fail-rate" in result.stdout

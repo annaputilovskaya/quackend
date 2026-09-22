@@ -58,13 +58,13 @@ contracts = [
         "quackend.loader",
     ] },
     { name = "cli is thin", modules = ["quackend.cli"],
-      forbidden = ["quackend.generator", "quackend.store"] },
+      forbidden = ["quackend.generator"], allow_indirect_imports = true },
     { name = "server goes through store", modules = ["quackend.server"],
-      forbidden = ["quackend.generator"] },
+      forbidden = ["quackend.generator"], allow_indirect_imports = true },
 ]
 ```
 
-Контракт `layers` разрешает импорт строго вниз; два `forbidden`-контракта закрывают «проход сквозь слой» (окончательную схему контрактов сверить с документацией import-linter при внедрении).
+Контракт `layers` разрешает импорт строго вниз; два `forbidden`-контракта с `allow_indirect_imports = true` запрещают только **прямой** «проход сквозь слой» (`cli → generator` напрямую, `server → generator` минуя `store`), оставляя санкционированные цепочки `cli → store → generator` и `server → store → generator`. `allow_indirect_imports = true` означает: нарушением считается прямой импорт запрещённого модуля; непрямые цепочки через разрешённый слой допускаются. (Окончательную схему контрактов сверять с документацией import-linter при внедрении.)
 
 [tool.ruff]
 target-version = "py310"
