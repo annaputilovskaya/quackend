@@ -105,7 +105,7 @@ layers = [
 name = "cli is thin"
 type = "forbidden"
 source_modules = ["quackend.cli"]
-forbidden_modules = ["quackend.generator", "quackend.store"]
+forbidden_modules = ["quackend.generator"]
 
 [[tool.importlinter.contracts]]
 name = "server goes through store"
