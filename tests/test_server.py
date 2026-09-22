@@ -100,3 +100,57 @@ def test_second_schema_custom_param_name():
 
     assert client.get("/projects/1").status_code == 200
     assert client.get("/projects/999").status_code == 404
+
+
+def make_weird_spec():
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "weird", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"wat": {"type": "weird-unknown-type"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_fail_soft_unsupported_schema_does_not_crash(capfd):
+    spec = make_weird_spec()
+
+    app = build_app(spec)
+    client = TestClient(app)
+    response = client.get("/items")
+    out = capfd.readouterr().out
+
+    assert response.status_code == 200
+    assert "[WARNING]" in out
+    assert "weird-unknown-type" in out
+
+
+def test_quiet_suppresses_warnings(capfd):
+    spec = make_weird_spec()
+
+    build_app(spec, quiet=True)
+    quiet_out = capfd.readouterr().out
+    build_app(spec, quiet=False)
+    loud_out = capfd.readouterr().out
+
+    assert "[WARNING]" not in quiet_out
+    assert "[WARNING]" in loud_out
