@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -130,6 +131,9 @@ def _string_value(schema: dict[str, Any], fake: Faker) -> str:
     producer = _FORMAT_PRODUCERS.get(format_name) if format_name is not None else None
     if producer:
         return producer(fake)
+    pattern: str | None = schema.get("pattern")
+    if pattern is not None and _is_numeric_pattern(pattern):
+        return _numeric_string_value(schema, fake)
     max_length: int | None = schema.get("maxLength")
     if max_length is not None:
         return fake.pystr(max_chars=max_length)
@@ -137,3 +141,28 @@ def _string_value(schema: dict[str, Any], fake: Faker) -> str:
     if min_length is not None:
         return fake.pystr(min_chars=min_length, max_chars=min_length + 20)
     return fake.word()
+
+
+def _is_numeric_pattern(pattern: str) -> bool:
+    r"""Return whether a pattern describes a decimal-as-string value.
+
+    A pattern counts as numeric when it accepts plain numbers like "0" and
+    "1.25" while rejecting ordinary words, e.g. :code:`^\d*\.?\d*$`.
+    """
+    try:
+        regex = re.compile(pattern)
+    except re.error:
+        return False
+    return bool(regex.fullmatch("0") and regex.fullmatch("1.25") and not regex.fullmatch("abc"))
+
+
+def _numeric_string_value(schema: dict[str, Any], fake: Faker) -> str:
+    low = float(schema.get("minimum", 0))
+    high = float(schema.get("maximum", 100))
+    raw = fake.random.uniform(low, high)
+    regex = re.compile(schema["pattern"])
+    candidates = (f"{raw:.2f}", str(int(round(raw))))
+    for candidate in candidates:
+        if regex.fullmatch(candidate):
+            return candidate
+    return candidates[0]

@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from faker import Faker
 
@@ -100,6 +102,28 @@ def test_generate_value_empty_one_of_returns_none_with_warning(fake):
     value = generate_value(schema, fake, warn=warnings.append)
     assert value is None
     assert any("oneOf" in w for w in warnings)
+
+
+def test_generate_value_numeric_pattern_string_is_numeric(fake):
+    schema = {"type": "string", "pattern": r"^\d*\.?\d*$"}
+    for _ in range(20):
+        value = generate_value(schema, fake)
+        assert re.fullmatch(r"^\d*\.?\d*$", value)
+        assert value != ""
+
+
+def test_generate_value_any_of_numeric_string_prefers_real_value(fake):
+    schema = {
+        "anyOf": [
+            {"type": "string", "pattern": r"^\d*\.?\d*$"},
+            {"type": "null"},
+        ]
+    }
+    for _ in range(20):
+        value = generate_value(schema, fake)
+        assert isinstance(value, str)
+        assert re.fullmatch(r"^\d*\.?\d*$", value)
+        assert value != ""
 
 
 def test_generate_value_object_beyond_depth_stops_at_empty(fake):
