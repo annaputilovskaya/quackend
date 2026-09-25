@@ -1,5 +1,7 @@
 # 🦆 Quackend
 
+**English** | [Русский](README.ru.md)
+
 > **If it walks like a backend and quacks like a backend...**
 > it's just your fake local server — built from an OpenAPI spec in 3 seconds.
 
