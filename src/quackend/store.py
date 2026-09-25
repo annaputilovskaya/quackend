@@ -76,6 +76,54 @@ class QuackStore:
         """
         return (self._collections.get(resource) or {}).get(key)
 
+    def first_or_create(
+        self,
+        resource: str,
+        key: str,
+        schema: dict[str, Any],
+        warn: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
+        """Return an existing item or generate one with the given key.
+
+        Args:
+            resource: the collection name.
+            key: the item key to look up or assign.
+            schema: the item schema used by the generator.
+            warn: an optional callback receiving generator warnings.
+
+        Returns:
+            The stored item, generated on demand when the key is missing.
+        """
+        existing = self.get(resource, key)
+        if existing is not None:
+            return existing
+
+        def on_warn(message: str) -> None:
+            if warn:
+                warn(f"{resource}: {message}")
+
+        item = generate_value(schema, self._fake, warn=on_warn)
+        if not isinstance(item, dict):
+            item = {"value": item}
+        item["id"] = key
+        if resource not in self._collections:
+            self._collections[resource] = {}
+        self._collections[resource][key] = item
+        return item
+
+    def first(self, resource: str) -> dict[str, Any] | None:
+        """Return the first stored item of a collection.
+
+        Args:
+            resource: the collection name.
+
+        Returns:
+            The first item in insertion order, or None for a missing or empty
+            collection.
+        """
+        values = list((self._collections.get(resource) or {}).values())
+        return values[0] if values else None
+
     def get_all(self, resource: str) -> list[dict[str, Any]]:
         """Return all items of a collection in insertion order.
 

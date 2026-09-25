@@ -27,18 +27,20 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
 
 
 def path_resource(path_template: str) -> str:
-    """Return the first non-parameter segment of a path template.
+    """Return the collection key for a path, dropping trailing parameters.
 
     Args:
         path_template: an OpenAPI path template such as "/users/{id}".
 
     Returns:
-        The first segment that is not a "{param}" placeholder.
+        The path without trailing "{param}" segments, so a list endpoint and
+        its detail endpoint share one collection while nested routes stay
+        separate keys.
     """
-    for segment in path_template.strip("/").split("/"):
-        if not (segment.startswith("{") and segment.endswith("}")):
-            return segment
-    return path_template.strip("/")
+    segments = path_template.strip("/").split("/")
+    while segments and segments[-1].startswith("{") and segments[-1].endswith("}"):
+        segments.pop()
+    return "/".join(segments) or path_template.strip("/")
 
 
 def iter_operations(spec: Mapping[str, Any]) -> Iterator[tuple[str, str, dict[str, Any]]]:

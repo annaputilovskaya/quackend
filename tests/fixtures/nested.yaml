@@ -1,0 +1,124 @@
+openapi: 3.0.1
+info:
+  title: Nested REST API
+  version: 1.0.0
+paths:
+  /api/v1/auth/me:
+    get:
+      summary: Current company profile
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  email: { type: string, format: email }
+  /api/v1/auth/login-status:
+    get:
+      summary: Login status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  redirect_url: { type: string }
+  /api/v1/upcheck/monitors:
+    get:
+      summary: List monitors
+      responses:
+        "200":
+          description: Monitors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+  /api/v1/upcheck/monitors/{monitor_id}:
+    parameters:
+      - name: monitor_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get monitor
+      responses:
+        "200":
+          description: Monitor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  url: { type: string, format: uri }
+    patch:
+      summary: Update monitor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          description: Updated monitor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+    delete:
+      summary: Delete monitor
+      responses:
+        "200":
+          description: Deleted
+  /api/v1/upcheck/monitors/{monitor_id}/uptime:
+    parameters:
+      - name: monitor_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Uptime series
+      responses:
+        "200":
+          description: Points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    ts: { type: string, format: date-time }
+                    uptime: { type: number }
+  /api/v1/notifications/channels:
+    get:
+      summary: Notification channels
+      responses:
+        "200":
+          description: Channels
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    provider: { type: string }
