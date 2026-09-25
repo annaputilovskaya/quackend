@@ -82,3 +82,28 @@ def test_ensure_broken_schema_propagates_warning(store):
     warnings = []
     store.ensure("broken", {"properties": {"x": {}}}, warn=warnings.append)
     assert any("missing type" in w for w in warnings)
+
+
+def test_first_or_create_generates_and_persists(store):
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+
+    created = store.first_or_create("widgets", "abc", schema)
+    again = store.first_or_create("widgets", "abc", schema)
+
+    assert created["id"] == "abc"
+    assert again is created
+
+
+def test_first_or_create_returns_seeded_item(store):
+    store.ensure("widgets", {"type": "object", "properties": {"name": {"type": "string"}}})
+
+    item = store.first_or_create("widgets", "3", {"type": "object"})
+
+    assert item["id"] == "3"
+
+
+def test_first_returns_first_seeded_item(store):
+    store.ensure("widgets", {"type": "object", "properties": {"name": {"type": "string"}}})
+
+    assert store.first("widgets")["id"] == "1"
+    assert store.first("missing") is None

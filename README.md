@@ -36,6 +36,7 @@ quackend start ./swagger.yaml \
 - Realistic Faker data mapped from your JSON Schema types and formats.
 - `example` / `examples` values take priority over generated data.
 - Stateful in-memory store: `GET /users/42`, `PUT /users/42`, `DELETE /users/42` keep the same object.
+- `GET /users/{any-id}` returns a generated entity instead of 404, and single-object endpoints like `/me` return one object — real-world REST just works.
 - `--seed` makes the dataset deterministic for your e2e tests.
 - Unknown types and `oneOf` don't crash the server — you get a yellow `[WARNING]` instead.
 

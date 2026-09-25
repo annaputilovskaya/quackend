@@ -26,9 +26,11 @@ def test_load_openapi_swagger2_returns_paths():
     assert "/legacy" in paths
 
 
-def test_path_resource_with_params_returns_first_literal():
+def test_path_resource_strips_only_trailing_params():
+    assert path_resource("/pets") == "pets"
     assert path_resource("/users/{id}") == "users"
-    assert path_resource("/api/v2/users/{user_id}/posts") == "api"
+    assert path_resource("/api/v2/users/{user_id}/posts") == "api/v2/users/{user_id}/posts"
+    assert path_resource("/monitors/{id}/checks") == "monitors/{id}/checks"
 
 
 @pytest.mark.parametrize("fixture", ["petstore.yaml", "react_local.yaml", "swagger2.yaml"])

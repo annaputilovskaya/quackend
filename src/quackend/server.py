@@ -99,6 +99,8 @@ def build_app(
         route_params = re.findall(r"\{(\w+)\}", path_template)
         resource = path_resource(path_template)
         status = _response_status(operation)
+        response_schema = operation_response_schema(operation)
+        is_list = response_schema is not None and response_schema.get("type") == "array"
 
         def _register(
             route_path: str,
@@ -106,6 +108,8 @@ def build_app(
             res: str,
             params: list[str],
             ok_status: int,
+            schema: dict[str, Any] | None,
+            list_response: bool,
         ) -> None:
             param_name = params[0] if params else ""
 
@@ -113,12 +117,27 @@ def build_app(
             async def _handler(request: Request) -> JSONResponse:
                 values = request.path_params
                 if m == "get":
+                    if list_response:
+                        return JSONResponse(
+                            content=resolved_store.get_all(res), status_code=ok_status
+                        )
                     if param_name:
-                        payload = resolved_store.get(res, values.get(param_name, ""))
-                        if payload is None:
-                            return JSONResponse({"error": "not found"}, status_code=404)
+                        if schema is None:
+                            payload = resolved_store.get(res, values.get(param_name, ""))
+                            if payload is None:
+                                return JSONResponse({"error": "not found"}, status_code=404)
+                        else:
+                            payload = resolved_store.first_or_create(
+                                res, values.get(param_name, ""), schema, warn=warn
+                            )
                         return JSONResponse(content=payload, status_code=ok_status)
-                    return JSONResponse(content=resolved_store.get_all(res), status_code=ok_status)
+                    if schema is not None:
+                        payload = resolved_store.first(res)
+                        if payload is None:
+                            payload = resolved_store.first_or_create(res, "", schema, warn=warn)
+                        return JSONResponse(content=payload, status_code=ok_status)
+                    items = resolved_store.get_all(res)
+                    return JSONResponse(content=items, status_code=ok_status)
                 if m == "post":
                     return JSONResponse(
                         content=resolved_store.create(res, _as_dict(await request.json())),
@@ -139,6 +158,6 @@ def build_app(
                     )
                 return JSONResponse({"error": "not implemented"}, status_code=405)
 
-        _register(path_template, method, resource, route_params, status)
+        _register(path_template, method, resource, route_params, status, response_schema, is_list)
 
     return app

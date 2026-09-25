@@ -48,10 +48,13 @@ def test_item_endpoint_by_id():
     assert response.json()["id"] == "5"
 
 
-def test_item_404_for_unknown_id():
+def test_item_unknown_id_generates_from_schema():
     client, _ = make_client()
 
-    assert client.get("/users/999").status_code == 404
+    response = client.get("/users/999")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "999"
 
 
 def test_post_then_get_returns_created():
@@ -74,11 +77,11 @@ def test_put_persists():
     assert client.put("/users/999", json={}).status_code == 404
 
 
-def test_delete_then_404():
+def test_delete_removes_then_get_regenerates():
     client, _ = make_client()
 
     assert client.delete("/users/4").status_code == 200
-    assert client.get("/users/4").status_code == 404
+    assert client.get("/users/4").json()["id"] == "4"
 
 
 def test_latency_delays_response():
@@ -110,7 +113,82 @@ def test_second_schema_custom_param_name():
     client = TestClient(app)
 
     assert client.get("/projects/1").status_code == 200
-    assert client.get("/projects/999").status_code == 404
+    assert client.get("/projects/999").json()["id"] == "999"
+
+
+def make_nested_client():
+    spec = load_openapi(FIXTURES / "nested.yaml")
+    store = QuackStore()
+    app = build_app(spec, store)
+    return TestClient(app), store
+
+
+def test_me_returns_single_object_not_array():
+    client, _ = make_nested_client()
+
+    body = client.get("/api/v1/auth/me").json()
+
+    assert isinstance(body, dict)
+    assert "email" in body
+
+
+def test_same_prefix_resources_are_separate_collections():
+    client, _ = make_nested_client()
+
+    me = client.get("/api/v1/auth/me").json()
+    status = client.get("/api/v1/auth/login-status").json()
+
+    assert "email" in me
+    assert "status" in status
+    assert "email" not in status
+
+
+def test_detail_unknown_id_generates_entity():
+    client, _ = make_nested_client()
+
+    monitor_id = "c5dfe3d0-998a-4e2c-b8f5-7f3d2c48a1b1"
+    body = client.get(f"/api/v1/upcheck/monitors/{monitor_id}").json()
+
+    assert body["id"] == monitor_id
+
+
+def test_array_subresource_returns_list():
+    client, _ = make_nested_client()
+
+    body = client.get("/api/v1/upcheck/monitors/xyz/uptime").json()
+
+    assert isinstance(body, list)
+    assert len(body) >= 1
+    assert "ts" in body[0]
+
+
+def test_array_endpoint_returns_list():
+    client, _ = make_nested_client()
+
+    body = client.get("/api/v1/notifications/channels").json()
+
+    assert isinstance(body, list)
+    assert "id" in body[0]
+
+
+def test_list_and_detail_share_collection():
+    client, _ = make_nested_client()
+
+    listed = client.get("/api/v1/upcheck/monitors").json()
+    first_id = listed[0]["id"]
+
+    detail = client.get(f"/api/v1/upcheck/monitors/{first_id}").json()
+
+    assert detail["id"] == first_id
+
+
+def test_patch_after_get_persists():
+    client, _ = make_nested_client()
+
+    client.get("/api/v1/upcheck/monitors/abc")
+    client.patch("/api/v1/upcheck/monitors/abc", json={"name": "Renamed"})
+
+    assert client.get("/api/v1/upcheck/monitors/abc").json()["name"] == "Renamed"
 
 
 def make_weird_spec():
