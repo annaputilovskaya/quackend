@@ -305,3 +305,12 @@ def test_get_with_yaml_date_example_answers_json():
 
     assert response.status_code == 200
     assert response.json()["when"] == "2024-01-15"
+
+
+def test_post_with_client_id_is_retrievable_by_returned_id():
+    client, _ = make_client()
+
+    created = client.post("/users", json={"id": "custom", "name": "Bob"}).json()
+
+    assert created["id"] == "11"
+    assert client.get("/users/11").json()["name"] == "Bob"
