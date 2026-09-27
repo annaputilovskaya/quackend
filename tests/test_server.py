@@ -341,3 +341,47 @@ def test_nested_delete_removes_the_addressed_member():
     assert store.get("orgs/{org_id}/members", "orgA/alice") is not None
     assert client.delete("/orgs/orgA/members/alice").status_code == 200
     assert store.get("orgs/{org_id}/members", "orgA/alice") is None
+
+
+def make_inverted_bounds_spec():
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "inverted", "version": "1.0.0"},
+        "paths": {
+            "/values": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "n": {
+                                                    "type": "integer",
+                                                    "minimum": 100,
+                                                    "maximum": 6,
+                                                }
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_build_app_survives_inverted_numeric_bounds():
+    client = TestClient(build_app(make_inverted_bounds_spec(), quiet=True))
+
+    response = client.get("/values")
+
+    assert response.status_code == 200
+    assert all(6 <= item["n"] <= 100 for item in response.json())

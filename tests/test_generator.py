@@ -206,3 +206,45 @@ def test_generate_value_example_with_yaml_date_key_is_jsonable(fake):
 
     assert value == {"2024-01-15": "fixed"}
     assert json.dumps(value)
+
+
+def test_generate_value_integer_with_inverted_bounds_warns(fake):
+    warnings = []
+    for _ in range(20):
+        value = generate_value(
+            {"type": "integer", "minimum": 100, "maximum": 6}, fake, warn=warnings.append
+        )
+        assert 6 <= value <= 100
+
+    assert any("inverted integer bounds" in message for message in warnings)
+
+
+def test_generate_value_integer_with_only_minimum_keeps_minimum(fake):
+    for _ in range(20):
+        assert generate_value({"type": "integer", "minimum": 100_000}, fake) >= 100_000
+
+
+def test_generate_value_integer_with_exclusive_bounds_stays_inside(fake):
+    for _ in range(20):
+        value = generate_value(
+            {"type": "integer", "exclusiveMinimum": 10, "exclusiveMaximum": 20}, fake
+        )
+        assert 11 <= value <= 19
+
+
+def test_generate_value_number_with_inverted_bounds_warns(fake):
+    warnings = []
+    value = generate_value(
+        {"type": "number", "minimum": 5, "maximum": 1}, fake, warn=warnings.append
+    )
+
+    assert 1 <= value <= 5
+    assert any("inverted number bounds" in message for message in warnings)
+
+
+def test_generate_value_integer_with_huge_minimum_is_exact(fake):
+    huge = 2**53 + 1
+    schema = {"type": "integer", "minimum": huge, "maximum": huge}
+
+    for _ in range(20):
+        assert generate_value(schema, fake) >= huge
