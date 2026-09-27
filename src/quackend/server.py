@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from rich.console import Console
 from rich.markup import escape as escape_markup
@@ -17,6 +18,7 @@ from quackend.loader import iter_operations, operation_response_schema, path_res
 from quackend.store import QuackStore
 
 _CONSOLE = Console()
+_MAX_BODY_BYTES = 1_048_576
 
 
 def _response_status(operation: dict[str, Any]) -> int:
@@ -46,8 +48,40 @@ def _identity_key(values: Mapping[str, Any], params: Sequence[str]) -> str:
     return "/".join(str(values.get(name, "")) for name in params)
 
 
-def _as_dict(payload: Any) -> dict[str, Any]:
-    return payload if isinstance(payload, dict) else {"payload": payload}
+async def _json_object(request: Request) -> dict[str, Any]:
+    """Read a bounded JSON object body, or fail with a 4xx status.
+
+    The size check uses the declared content-length; a chunked body without
+    that header is parsed as-is.
+
+    Args:
+        request: the incoming request.
+
+    Returns:
+        The decoded JSON object.
+
+    Raises:
+        HTTPException: 415 for a non-JSON content type, 413 for a body over
+            _MAX_BODY_BYTES, 400 for an unparsable or non-object body.
+    """
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media_type and media_type != "application/json":
+        raise HTTPException(status_code=415, detail="expected application/json")
+    declared = request.headers.get("content-length")
+    if (
+        declared is not None
+        and declared.isascii()
+        and declared.isdigit()
+        and int(declared) > _MAX_BODY_BYTES
+    ):
+        raise HTTPException(status_code=413, detail="request body too large")
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="malformed JSON body") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return payload
 
 
 def _seed_resources(
@@ -154,11 +188,11 @@ def build_app(
                     return JSONResponse(content=items, status_code=ok_status)
                 if m == "post":
                     return JSONResponse(
-                        content=resolved_store.create(res, _as_dict(await request.json())),
+                        content=resolved_store.create(res, await _json_object(request)),
                         status_code=201,
                     )
                 if m in ("put", "patch"):
-                    updated = resolved_store.update(res, key, _as_dict(await request.json()))
+                    updated = resolved_store.update(res, key, await _json_object(request))
                     if updated is None:
                         return JSONResponse({"error": "not found"}, status_code=404)
                     return JSONResponse(content=updated, status_code=200)

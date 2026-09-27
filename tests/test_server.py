@@ -1,7 +1,9 @@
+import asyncio
 import copy
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from quackend.loader import load_openapi
@@ -425,3 +427,85 @@ def test_spec_text_with_rich_markup_still_serves_requests(capfd):
     assert response.status_code == 200
     assert "unsupported type" in out
     assert "[/]" in out
+
+
+def make_status_spec():
+    item_schema = {
+        "type": "object",
+        "properties": {"id": {"type": "string"}, "name": {"type": "string"}},
+    }
+    ok = {"description": "ok", "content": {"application/json": {"schema": item_schema}}}
+    accepted = {"description": "accepted", "content": {"application/json": {"schema": item_schema}}}
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "status", "version": "1.0.0"},
+        "paths": {
+            "/jobs": {"post": {"responses": {"202": accepted}}},
+            "/jobs/{id}": {
+                "get": {"responses": {"200": ok}},
+                "put": {"responses": {"202": accepted}},
+                "delete": {"responses": {"204": {"description": "gone"}}},
+            },
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("raw", "content_type", "expected"),
+    [
+        (b"{not json", "application/json", 400),
+        (b"", "application/json", 400),
+        (b'"hello"', "application/json", 400),
+        (b"[1,2,3]", "application/json", 400),
+        (b"<xml/>", "application/xml", 415),
+    ],
+)
+def test_invalid_request_body_returns_client_error(raw, content_type, expected):
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.post("/jobs", content=raw, headers={"content-type": content_type})
+
+    assert response.status_code == expected
+
+
+def test_oversized_request_body_returns_413():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+    raw = b'{"name": "' + b"x" * 1_048_576 + b'"}'
+
+    response = client.post("/jobs", content=raw, headers={"content-type": "application/json"})
+
+    assert response.status_code == 413
+
+
+def test_non_ascii_declared_content_length_is_not_a_server_error():
+    app = build_app(make_status_spec(), quiet=True)
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/jobs",
+        "raw_path": b"/jobs",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+            (b"content-length", b"\xb2"),
+        ],
+        "client": ("testclient", 123),
+        "server": ("testserver", 80),
+    }
+    messages = []
+
+    async def receive():
+        return {"type": "http.request", "body": b'{"name": "job"}', "more_body": False}
+
+    async def send(message):
+        messages.append(message)
+
+    asyncio.run(app(scope, receive, send))
+
+    start = next(m for m in messages if m["type"] == "http.response.start")
+    assert start["status"] < 500
