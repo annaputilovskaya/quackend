@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
@@ -27,6 +27,22 @@ def _response_status(operation: dict[str, Any]) -> int:
         if 200 <= code < 300:
             return code
     return 200
+
+
+def _identity_key(values: Mapping[str, Any], params: Sequence[str]) -> str:
+    """Return the store key addressing every path parameter of a route.
+
+    Nested collections repeat a parent segment, so the first parameter alone
+    would address the same item for every child of that parent.
+
+    Args:
+        values: the ASGI path parameters of the request.
+        params: the ordered parameter names declared by the path template.
+
+    Returns:
+        A composite key such as ``"orgA/alice"``, or ``""`` without parameters.
+    """
+    return "/".join(str(values.get(name, "")) for name in params)
 
 
 def _as_dict(payload: Any) -> dict[str, Any]:
@@ -111,25 +127,22 @@ def build_app(
             schema: dict[str, Any] | None,
             list_response: bool,
         ) -> None:
-            param_name = params[0] if params else ""
-
             @app.api_route(route_path, methods=[m.upper()], include_in_schema=False)
             async def _handler(request: Request) -> JSONResponse:
                 values = request.path_params
+                key = _identity_key(values, params)
                 if m == "get":
                     if list_response:
                         return JSONResponse(
                             content=resolved_store.get_all(res), status_code=ok_status
                         )
-                    if param_name:
+                    if params:
                         if schema is None:
-                            payload = resolved_store.get(res, values.get(param_name, ""))
+                            payload = resolved_store.get(res, key)
                             if payload is None:
                                 return JSONResponse({"error": "not found"}, status_code=404)
                         else:
-                            payload = resolved_store.first_or_create(
-                                res, values.get(param_name, ""), schema, warn=warn
-                            )
+                            payload = resolved_store.first_or_create(res, key, schema, warn=warn)
                         return JSONResponse(content=payload, status_code=ok_status)
                     if schema is not None:
                         payload = resolved_store.first(res)
@@ -144,18 +157,14 @@ def build_app(
                         status_code=201,
                     )
                 if m in ("put", "patch"):
-                    updated = resolved_store.update(
-                        res, values.get(param_name, ""), _as_dict(await request.json())
-                    )
+                    updated = resolved_store.update(res, key, _as_dict(await request.json()))
                     if updated is None:
                         return JSONResponse({"error": "not found"}, status_code=404)
                     return JSONResponse(content=updated, status_code=200)
                 if m == "delete":
-                    if not resolved_store.delete(res, values.get(param_name, "")):
+                    if not resolved_store.delete(res, key):
                         return JSONResponse({"error": "not found"}, status_code=404)
-                    return JSONResponse(
-                        content={"deleted": values.get(param_name)}, status_code=200
-                    )
+                    return JSONResponse(content={"deleted": key}, status_code=200)
                 return JSONResponse({"error": "not implemented"}, status_code=405)
 
         _register(path_template, method, resource, route_params, status, response_schema, is_list)

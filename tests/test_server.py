@@ -314,3 +314,30 @@ def test_post_with_client_id_is_retrievable_by_returned_id():
 
     assert created["id"] == "11"
     assert client.get("/users/11").json()["name"] == "Bob"
+
+
+def make_nested_resources_client():
+    spec = load_openapi(FIXTURES / "nested_resources.yaml")
+    store = QuackStore()
+    return TestClient(build_app(spec, store, quiet=True)), store
+
+
+def test_nested_detail_uses_every_path_param_as_identity():
+    client, _ = make_nested_resources_client()
+
+    alice = client.get("/orgs/orgA/members/alice").json()
+    bob = client.get("/orgs/orgA/members/bob").json()
+    other_org = client.get("/orgs/orgB/members/alice").json()
+
+    assert alice["id"] == "orgA/alice"
+    assert bob["id"] == "orgA/bob"
+    assert len({alice["id"], bob["id"], other_org["id"]}) == 3
+
+
+def test_nested_delete_removes_the_addressed_member():
+    client, store = make_nested_resources_client()
+    client.get("/orgs/orgA/members/alice")
+
+    assert store.get("orgs/{org_id}/members", "orgA/alice") is not None
+    assert client.delete("/orgs/orgA/members/alice").status_code == 200
+    assert store.get("orgs/{org_id}/members", "orgA/alice") is None
