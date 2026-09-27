@@ -1,0 +1,21 @@
+openapi: 3.0.1
+info:
+  title: YAML date example
+  version: 1.0.0
+paths:
+  /d:
+    get:
+      summary: Event with a date example
+      responses:
+        "200":
+          description: Event
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  when:
+                    type: string
+                    example: 2024-01-15
+                  name:
+                    type: string

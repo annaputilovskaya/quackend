@@ -1,3 +1,5 @@
+import datetime
+import json
 import re
 
 import pytest
@@ -153,3 +155,54 @@ def test_generate_value_object_beyond_depth_stops_at_empty(fake):
     }
     value = generate_value(schema, fake)
     assert value["a"]["b"]["c"]["d"] == {}
+
+
+def test_generate_value_example_returns_a_detached_copy(fake):
+    example = {"id": "from-spec", "name": "fixed"}
+    value = generate_value({"type": "object", "example": example}, fake)
+
+    value["name"] = "changed"
+
+    assert example == {"id": "from-spec", "name": "fixed"}
+
+
+def test_generate_value_enum_returns_a_detached_copy(fake):
+    enum = [{"id": "a"}]
+    value = generate_value({"type": "object", "enum": enum}, fake)
+
+    value["id"] = "changed"
+
+    assert enum == [{"id": "a"}]
+
+
+def test_generate_value_example_with_yaml_date_returns_string(fake):
+    value = generate_value({"type": "string", "example": datetime.date(2024, 1, 15)}, fake)
+
+    assert value == "2024-01-15"
+
+
+def test_generate_value_example_with_yaml_date_warns(fake):
+    warnings = []
+    generate_value(
+        {"type": "string", "example": datetime.date(2024, 1, 15)}, fake, warn=warnings.append
+    )
+
+    assert any("not JSON" in message for message in warnings)
+
+
+def test_generate_value_example_with_nested_date_is_jsonable(fake):
+    value = generate_value(
+        {"type": "object", "example": {"when": datetime.date(2024, 1, 15)}}, fake
+    )
+
+    assert value == {"when": "2024-01-15"}
+    assert json.dumps(value)
+
+
+def test_generate_value_example_with_yaml_date_key_is_jsonable(fake):
+    value = generate_value(
+        {"type": "object", "example": {datetime.date(2024, 1, 15): "fixed"}}, fake
+    )
+
+    assert value == {"2024-01-15": "fixed"}
+    assert json.dumps(value)

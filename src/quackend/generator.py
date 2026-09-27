@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import re
 from collections.abc import Callable
 from typing import Any
@@ -10,6 +11,9 @@ from faker import Faker
 
 _DEPTH_LIMIT = 3
 _ARRAY_MAX = 5
+_DEFAULT_INTEGER_MAX = 9_999
+_DEFAULT_NUMBER_MAX = 1_000_000
+_JSON_SCALARS = (str, int, float, bool, type(None))
 
 _FORMAT_PRODUCERS: dict[str, Callable[[Faker], str]] = {
     "email": lambda f: f.email(),
@@ -44,10 +48,11 @@ def generate_value(
     Returns:
         A generated value, or None when the schema is missing or unsupported.
     """
-    if schema.get("example") is not None:
-        return schema["example"]
+    example = schema.get("example")
+    if example is not None:
+        return _jsonable(copy.deepcopy(example), warn)
     if "enum" in schema:
-        return fake.random.choice(schema["enum"])
+        return _jsonable(copy.deepcopy(fake.random.choice(schema["enum"])), warn)
     if "oneOf" in schema or "anyOf" in schema:
         branches: list[dict[str, Any]] = schema.get("oneOf") or schema.get("anyOf") or []
         if not branches:
@@ -110,6 +115,31 @@ def _object_value(
         name: generate_value(sub_schema, fake, depth + 1, warn)
         for name, sub_schema in (schema.get("properties") or {}).items()
     }
+
+
+def _jsonable(value: Any, warn: Callable[[str], None] | None = None) -> Any:
+    """Return a detached, JSON-serialisable copy of a value taken from a spec.
+
+    YAML readers type unquoted dates as ``datetime.date``; such a value would
+    break ``json.dumps`` on every response, so it is coerced to its string form.
+
+    Args:
+        value: a value produced by a YAML or JSON parser.
+        warn: an optional callback invoked when a coercion was needed.
+
+    Returns:
+        A value that ``json.dumps`` accepts, sharing no mutable state with the
+        input.
+    """
+    if isinstance(value, _JSON_SCALARS):
+        return value
+    if isinstance(value, dict):
+        return {str(name): _jsonable(item, warn) for name, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item, warn) for item in value]
+    if warn:
+        warn(f"spec value of type {type(value).__name__} is not JSON, coerced to str")
+    return str(value)
 
 
 def _integer_value(schema: dict[str, Any], fake: Faker) -> int:

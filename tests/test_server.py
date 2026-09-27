@@ -1,3 +1,4 @@
+import copy
 import time
 from pathlib import Path
 
@@ -243,3 +244,64 @@ def test_quiet_suppresses_warnings(capfd):
 
     assert "[WARNING]" not in quiet_out
     assert "[WARNING]" in loud_out
+
+
+def make_example_spec():
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "example", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "example": {"id": "from-spec", "name": "fixed"},
+                                            "properties": {
+                                                "id": {"type": "string"},
+                                                "name": {"type": "string"},
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_list_endpoint_with_item_example_has_unique_ids():
+    client = TestClient(build_app(make_example_spec(), quiet=True))
+
+    body = client.get("/items").json()
+
+    assert len(body) == 10
+    assert len({item["id"] for item in body}) == 10
+
+
+def test_build_app_does_not_mutate_the_spec_dict():
+    spec = make_example_spec()
+    before = copy.deepcopy(spec)
+
+    build_app(spec, quiet=True)
+
+    assert spec == before
+
+
+def test_get_with_yaml_date_example_answers_json():
+    spec = load_openapi(FIXTURES / "yaml_date.yaml")
+    client = TestClient(build_app(spec, quiet=True))
+
+    response = client.get("/d")
+
+    assert response.status_code == 200
+    assert response.json()["when"] == "2024-01-15"
