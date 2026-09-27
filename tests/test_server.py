@@ -385,3 +385,43 @@ def test_build_app_survives_inverted_numeric_bounds():
 
     assert response.status_code == 200
     assert all(6 <= item["n"] <= 100 for item in response.json())
+
+
+def make_markup_spec():
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "markup", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"wat": {"type": "[/]"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_spec_text_with_rich_markup_still_serves_requests(capfd):
+    client = TestClient(build_app(make_markup_spec(), quiet=False))
+
+    response = client.get("/items")
+    out = capfd.readouterr().out
+
+    assert response.status_code == 200
+    assert "unsupported type" in out
+    assert "[/]" in out

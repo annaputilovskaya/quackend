@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from rich.console import Console
+from rich.markup import escape as escape_markup
 
 from quackend.loader import iter_operations, operation_response_schema, path_resource
 from quackend.store import QuackStore
@@ -94,7 +95,7 @@ def build_app(
 
     def warn(message: str) -> None:
         if not quiet:
-            _CONSOLE.print(f"[yellow][WARNING][/yellow] {message}")
+            _CONSOLE.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
 
     _seed_resources(spec, resolved_store, warn)
 
