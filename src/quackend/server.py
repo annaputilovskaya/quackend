@@ -32,6 +32,12 @@ def _response_status(operation: dict[str, Any]) -> int:
     return 200
 
 
+def _ok_response(content: Mapping[str, Any] | Sequence[Any], status: int) -> Response:
+    if status == 204:
+        return Response(status_code=204)
+    return JSONResponse(content=content, status_code=status)
+
+
 def _identity_key(values: Mapping[str, Any], params: Sequence[str]) -> str:
     """Return the store key addressing every path parameter of a route.
 
@@ -163,14 +169,12 @@ def build_app(
             list_response: bool,
         ) -> None:
             @app.api_route(route_path, methods=[m.upper()], include_in_schema=False)
-            async def _handler(request: Request) -> JSONResponse:
+            async def _handler(request: Request) -> Response:
                 values = request.path_params
                 key = _identity_key(values, params)
                 if m == "get":
                     if list_response:
-                        return JSONResponse(
-                            content=resolved_store.get_all(res), status_code=ok_status
-                        )
+                        return _ok_response(resolved_store.get_all(res), ok_status)
                     if params:
                         if schema is None:
                             payload = resolved_store.get(res, key)
@@ -178,28 +182,28 @@ def build_app(
                                 return JSONResponse({"error": "not found"}, status_code=404)
                         else:
                             payload = resolved_store.first_or_create(res, key, schema, warn=warn)
-                        return JSONResponse(content=payload, status_code=ok_status)
+                        return _ok_response(payload, ok_status)
                     if schema is not None:
                         payload = resolved_store.first(res)
                         if payload is None:
                             payload = resolved_store.first_or_create(res, "", schema, warn=warn)
-                        return JSONResponse(content=payload, status_code=ok_status)
+                        return _ok_response(payload, ok_status)
                     items = resolved_store.get_all(res)
-                    return JSONResponse(content=items, status_code=ok_status)
+                    return _ok_response(items, ok_status)
                 if m == "post":
-                    return JSONResponse(
-                        content=resolved_store.create(res, await _json_object(request)),
-                        status_code=201,
+                    return _ok_response(
+                        resolved_store.create(res, await _json_object(request)),
+                        ok_status,
                     )
                 if m in ("put", "patch"):
                     updated = resolved_store.update(res, key, await _json_object(request))
                     if updated is None:
                         return JSONResponse({"error": "not found"}, status_code=404)
-                    return JSONResponse(content=updated, status_code=200)
+                    return _ok_response(updated, ok_status)
                 if m == "delete":
                     if not resolved_store.delete(res, key):
                         return JSONResponse({"error": "not found"}, status_code=404)
-                    return JSONResponse(content={"deleted": key}, status_code=200)
+                    return _ok_response({"deleted": key}, ok_status)
                 return JSONResponse({"error": "not implemented"}, status_code=405)
 
         _register(path_template, method, resource, route_params, status, response_schema, is_list)

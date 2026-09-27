@@ -509,3 +509,24 @@ def test_non_ascii_declared_content_length_is_not_a_server_error():
 
     start = next(m for m in messages if m["type"] == "http.response.start")
     assert start["status"] < 500
+
+
+def test_post_answers_the_status_declared_by_the_operation():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    assert client.post("/jobs", json={"name": "job"}).status_code == 202
+
+
+def test_put_answers_the_status_declared_by_the_operation():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    assert client.put("/jobs/2", json={"name": "renamed"}).status_code == 202
+
+
+def test_delete_with_declared_204_has_no_body():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.delete("/jobs/2")
+
+    assert response.status_code == 204
+    assert response.content == b""
