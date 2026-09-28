@@ -1,3 +1,9 @@
+import re
+from io import StringIO
+
+import rich
+from rich.console import Console
+
 from quackend.reporting import render_route_table
 
 
@@ -25,11 +31,20 @@ def test_route_table_renders_opening_markup_tag_path_verbatim(capfd):
     assert "/items/[id]" in out
 
 
-def test_route_table_renders_ordinary_paths_and_keeps_column_style(capfd):
-    table = render_route_table(make_spec("/users", "/users/{id}"))
-    out = capfd.readouterr().out
+def test_route_table_renders_ordinary_paths_and_keeps_column_style(monkeypatch):
+    # A terminal-style console writing to a buffer, so the assertions read the
+    # rendered table rather than the Table object: capfd sees a non-tty and Rich
+    # would drop the colour the Method column is supposed to keep.
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=True, color_system="standard", width=200)
+    monkeypatch.setattr(rich, "get_console", lambda: console)
 
-    assert "GET" in out
-    assert "/users" in out
-    assert "/users/{id}" in out
-    assert table.columns[0].style == "cyan"
+    render_route_table(make_spec("/users", "/users/{id}"))
+
+    out = buffer.getvalue()
+    # "." cannot cross a newline and the only thing between two cells is padding
+    # and the table border, so these pin the Method cell and the Path cell that
+    # follows it inside one rendered row, rather than two cells of the column.
+    assert re.search(r"\x1b\[36m.*?GET", out)
+    assert re.search(r"GET.*?│ +/users *│", out)
+    assert re.search(r"GET.*?│ +/users/\{id\} *│", out)

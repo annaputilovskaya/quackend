@@ -436,6 +436,7 @@ def make_status_spec():
     }
     ok = {"description": "ok", "content": {"application/json": {"schema": item_schema}}}
     accepted = {"description": "accepted", "content": {"application/json": {"schema": item_schema}}}
+    gone = {"description": "gone"}
     return {
         "openapi": "3.0.0",
         "info": {"title": "status", "version": "1.0.0"},
@@ -444,7 +445,14 @@ def make_status_spec():
             "/jobs/{id}": {
                 "get": {"responses": {"200": ok}},
                 "put": {"responses": {"202": accepted}},
-                "delete": {"responses": {"204": {"description": "gone"}}},
+                "patch": {"responses": {"202": accepted}},
+                "delete": {"responses": {"204": gone}},
+            },
+            "/pings": {"post": {"responses": {"204": gone}}},
+            "/telemetry": {"get": {"responses": {"204": gone}}},
+            "/tasks/{id}": {
+                "get": {"responses": {"200": ok}},
+                "delete": {"responses": {"200": ok}},
             },
         },
     }
@@ -458,6 +466,9 @@ def make_status_spec():
         (b'"hello"', "application/json", 400),
         (b"[1,2,3]", "application/json", 400),
         (b"<xml/>", "application/xml", 415),
+        (b"\xff", "application/json", 400),
+        (b"{not json", "application/json; charset=utf-8", 400),
+        (b"{not json", "APPLICATION/JSON", 400),
     ],
 )
 def test_invalid_request_body_returns_client_error(raw, content_type, expected):
@@ -530,3 +541,69 @@ def test_delete_with_declared_204_has_no_body():
 
     assert response.status_code == 204
     assert response.content == b""
+
+
+def test_post_with_declared_204_has_no_body():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.post("/pings", json={"name": "ping"})
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_get_collection_with_declared_204_has_no_body():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.get("/telemetry")
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_patch_answers_the_status_declared_by_the_operation():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.patch("/jobs/2", json={"name": "patched"})
+
+    assert response.status_code == 202
+
+
+def test_delete_with_declared_200_returns_the_addressed_key():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.delete("/tasks/2")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": "2"}
+
+
+def test_request_without_a_content_type_header_answers_400():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.post("/jobs", content=b"{not json")
+
+    assert response.status_code == 400
+
+
+# No content key at all: operation_response_schema returns None, so the route reads
+# the store instead of generating, and an empty store means the 404 branch runs.
+def make_schemaless_nested_spec():
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "schemaless", "version": "1.0.0"},
+        "paths": {
+            "/orgs/{org_id}/members/{member_id}": {
+                "get": {"responses": {"200": {"description": "ok"}}}
+            }
+        },
+    }
+
+
+def test_nested_get_without_a_response_schema_answers_404():
+    client = TestClient(build_app(make_schemaless_nested_spec(), quiet=True))
+
+    response = client.get("/orgs/orgA/members/alice")
+
+    assert response.status_code == 404
+    assert response.json() == {"error": "not found"}
