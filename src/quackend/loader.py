@@ -8,6 +8,8 @@ from typing import Any
 
 import prance
 
+__all__ = ["iter_operations", "load_openapi", "operation_response_schema", "path_resource"]
+
 
 def load_openapi(source: str | Path) -> dict[str, Any]:
     """Parse an OpenAPI v3 or Swagger v2 spec and resolve all $refs.

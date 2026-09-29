@@ -10,6 +10,8 @@ from faker import Faker
 
 from quackend.generator import generate_value
 
+__all__ = ["COLLECTION_SIZE", "QuackStore"]
+
 COLLECTION_SIZE = 10
 
 

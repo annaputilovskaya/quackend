@@ -36,6 +36,7 @@ quackend = "quackend.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quackend"]
+artifacts = ["src/quackend/py.typed"]
 
 [tool.hatch.version]
 path = "src/quackend/__init__.py"
