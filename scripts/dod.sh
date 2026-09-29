@@ -21,7 +21,7 @@ echo -e "${BLUE}[3/5] Checking Code Format (ruff format)...${NC}"
 ruff format --check .
 
 echo -e "${BLUE}[4/5] Verifying Static Types (mypy)...${NC}"
-mypy src
+mypy src tests
 
 echo -e "${BLUE}[5/5] Running Tests & Coverage (pytest)...${NC}"
 python -m coverage run -m pytest
