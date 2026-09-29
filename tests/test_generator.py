@@ -1,6 +1,7 @@
 import datetime
 import json
 import re
+from typing import Any
 
 import pytest
 from faker import Faker
@@ -9,85 +10,85 @@ from quackend.generator import generate_value
 
 
 @pytest.fixture()
-def fake():
+def fake() -> Faker:
     return Faker()
 
 
-def test_generate_value_example_returns_exact_value(fake):
+def test_generate_value_example_returns_exact_value(fake: Faker) -> None:
     assert generate_value({"type": "string", "example": "fixed"}, fake) == "fixed"
 
 
-def test_generate_value_enum_always_in_choices(fake):
+def test_generate_value_enum_always_in_choices(fake: Faker) -> None:
     schema = {"type": "string", "enum": ["admin", "user"]}
     for _ in range(20):
         assert generate_value(schema, fake) in ["admin", "user"]
 
 
-def test_generate_value_email_string_contains_at(fake):
+def test_generate_value_email_string_contains_at(fake: Faker) -> None:
     value = generate_value({"type": "string", "format": "email"}, fake)
     assert "email" in value or "@" in value
 
 
-def test_generate_value_integer_within_bounds(fake):
+def test_generate_value_integer_within_bounds(fake: Faker) -> None:
     for _ in range(20):
         value = generate_value({"type": "integer", "minimum": 10, "maximum": 20}, fake)
         assert 10 <= value <= 20
 
 
-def test_generate_value_number_within_bounds(fake):
+def test_generate_value_number_within_bounds(fake: Faker) -> None:
     for _ in range(20):
         value = generate_value({"type": "number", "minimum": 1.5, "maximum": 2.5}, fake)
         assert 1.5 <= value <= 2.5
 
 
-def test_generate_value_boolean_in_expected_values(fake):
+def test_generate_value_boolean_in_expected_values(fake: Faker) -> None:
     assert generate_value({"type": "boolean"}, fake) in (True, False)
 
 
-def test_generate_value_array_returns_1_to_5_integers(fake):
+def test_generate_value_array_returns_1_to_5_integers(fake: Faker) -> None:
     value = generate_value({"type": "array", "items": {"type": "integer"}}, fake)
     assert 1 <= len(value) <= 5
     assert all(isinstance(v, int) for v in value)
 
 
-def test_generate_value_object_returns_string_property(fake):
+def test_generate_value_object_returns_string_property(fake: Faker) -> None:
     schema = {"type": "object", "properties": {"name": {"type": "string"}}}
     value = generate_value(schema, fake)
     assert isinstance(value, dict)
     assert isinstance(value["name"], str)
 
 
-def test_generate_value_missing_type_returns_none_with_warning(fake):
-    warnings = []
+def test_generate_value_missing_type_returns_none_with_warning(fake: Faker) -> None:
+    warnings: list[str] = []
     value = generate_value({}, fake, warn=warnings.append)
     assert value is None
     assert any("missing type" in w for w in warnings)
 
 
-def test_generate_value_unsupported_type_returns_none_with_warning(fake):
-    warnings = []
+def test_generate_value_unsupported_type_returns_none_with_warning(fake: Faker) -> None:
+    warnings: list[str] = []
     value = generate_value({"type": "unknown"}, fake, warn=warnings.append)
     assert value is None
     assert any("unsupported type" in w for w in warnings)
 
 
-def test_generate_value_one_of_uses_first_branch_with_warning(fake):
-    warnings = []
+def test_generate_value_one_of_uses_first_branch_with_warning(fake: Faker) -> None:
+    warnings: list[str] = []
     schema = {"oneOf": [{"type": "integer"}, {"type": "string"}]}
     value = generate_value(schema, fake, warn=warnings.append)
     assert any("oneOf" in w or "anyOf" in w for w in warnings)
     assert isinstance(value, int)
 
 
-def test_generate_value_any_of_uses_first_branch_with_warning(fake):
-    warnings = []
+def test_generate_value_any_of_uses_first_branch_with_warning(fake: Faker) -> None:
+    warnings: list[str] = []
     schema = {"anyOf": [{"type": "integer"}, {"type": "string"}]}
     value = generate_value(schema, fake, warn=warnings.append)
     assert any("oneOf" in w or "anyOf" in w for w in warnings)
     assert isinstance(value, int)
 
 
-def test_generate_value_all_of_merges_branches(fake):
+def test_generate_value_all_of_merges_branches(fake: Faker) -> None:
     schema = {
         "allOf": [
             {"type": "object", "properties": {"a": {"type": "string"}}},
@@ -98,15 +99,15 @@ def test_generate_value_all_of_merges_branches(fake):
     assert set(value) == {"a", "b"}
 
 
-def test_generate_value_empty_one_of_returns_none_with_warning(fake):
-    warnings = []
-    schema = {"oneOf": []}
+def test_generate_value_empty_one_of_returns_none_with_warning(fake: Faker) -> None:
+    warnings: list[str] = []
+    schema: dict[str, Any] = {"oneOf": []}
     value = generate_value(schema, fake, warn=warnings.append)
     assert value is None
     assert any("oneOf" in w for w in warnings)
 
 
-def test_generate_value_numeric_pattern_string_is_numeric(fake):
+def test_generate_value_numeric_pattern_string_is_numeric(fake: Faker) -> None:
     schema = {"type": "string", "pattern": r"^\d*\.?\d*$"}
     for _ in range(20):
         value = generate_value(schema, fake)
@@ -114,7 +115,7 @@ def test_generate_value_numeric_pattern_string_is_numeric(fake):
         assert value != ""
 
 
-def test_generate_value_any_of_numeric_string_prefers_real_value(fake):
+def test_generate_value_any_of_numeric_string_prefers_real_value(fake: Faker) -> None:
     schema = {
         "anyOf": [
             {"type": "string", "pattern": r"^\d*\.?\d*$"},
@@ -128,7 +129,7 @@ def test_generate_value_any_of_numeric_string_prefers_real_value(fake):
         assert value != ""
 
 
-def test_generate_value_object_beyond_depth_stops_at_empty(fake):
+def test_generate_value_object_beyond_depth_stops_at_empty(fake: Faker) -> None:
     schema = {
         "type": "object",
         "properties": {
@@ -157,7 +158,7 @@ def test_generate_value_object_beyond_depth_stops_at_empty(fake):
     assert value["a"]["b"]["c"]["d"] == {}
 
 
-def test_generate_value_example_returns_a_detached_copy(fake):
+def test_generate_value_example_returns_a_detached_copy(fake: Faker) -> None:
     example = {"id": "from-spec", "name": "fixed"}
     value = generate_value({"type": "object", "example": example}, fake)
 
@@ -166,7 +167,7 @@ def test_generate_value_example_returns_a_detached_copy(fake):
     assert example == {"id": "from-spec", "name": "fixed"}
 
 
-def test_generate_value_enum_returns_a_detached_copy(fake):
+def test_generate_value_enum_returns_a_detached_copy(fake: Faker) -> None:
     enum = [{"id": "a"}]
     value = generate_value({"type": "object", "enum": enum}, fake)
 
@@ -175,14 +176,14 @@ def test_generate_value_enum_returns_a_detached_copy(fake):
     assert enum == [{"id": "a"}]
 
 
-def test_generate_value_example_with_yaml_date_returns_string(fake):
+def test_generate_value_example_with_yaml_date_returns_string(fake: Faker) -> None:
     value = generate_value({"type": "string", "example": datetime.date(2024, 1, 15)}, fake)
 
     assert value == "2024-01-15"
 
 
-def test_generate_value_example_with_yaml_date_warns(fake):
-    warnings = []
+def test_generate_value_example_with_yaml_date_warns(fake: Faker) -> None:
+    warnings: list[str] = []
     generate_value(
         {"type": "string", "example": datetime.date(2024, 1, 15)}, fake, warn=warnings.append
     )
@@ -190,7 +191,7 @@ def test_generate_value_example_with_yaml_date_warns(fake):
     assert any("not JSON" in message for message in warnings)
 
 
-def test_generate_value_example_with_nested_date_is_jsonable(fake):
+def test_generate_value_example_with_nested_date_is_jsonable(fake: Faker) -> None:
     value = generate_value(
         {"type": "object", "example": {"when": datetime.date(2024, 1, 15)}}, fake
     )
@@ -199,7 +200,7 @@ def test_generate_value_example_with_nested_date_is_jsonable(fake):
     assert json.dumps(value)
 
 
-def test_generate_value_example_with_yaml_date_key_is_jsonable(fake):
+def test_generate_value_example_with_yaml_date_key_is_jsonable(fake: Faker) -> None:
     value = generate_value(
         {"type": "object", "example": {datetime.date(2024, 1, 15): "fixed"}}, fake
     )
@@ -208,8 +209,8 @@ def test_generate_value_example_with_yaml_date_key_is_jsonable(fake):
     assert json.dumps(value)
 
 
-def test_generate_value_integer_with_inverted_bounds_warns(fake):
-    warnings = []
+def test_generate_value_integer_with_inverted_bounds_warns(fake: Faker) -> None:
+    warnings: list[str] = []
     for _ in range(20):
         value = generate_value(
             {"type": "integer", "minimum": 100, "maximum": 6}, fake, warn=warnings.append
@@ -219,12 +220,12 @@ def test_generate_value_integer_with_inverted_bounds_warns(fake):
     assert any("inverted integer bounds" in message for message in warnings)
 
 
-def test_generate_value_integer_with_only_minimum_keeps_minimum(fake):
+def test_generate_value_integer_with_only_minimum_keeps_minimum(fake: Faker) -> None:
     for _ in range(20):
         assert generate_value({"type": "integer", "minimum": 100_000}, fake) >= 100_000
 
 
-def test_generate_value_integer_with_exclusive_bounds_stays_inside(fake):
+def test_generate_value_integer_with_exclusive_bounds_stays_inside(fake: Faker) -> None:
     for _ in range(20):
         value = generate_value(
             {"type": "integer", "exclusiveMinimum": 10, "exclusiveMaximum": 20}, fake
@@ -232,8 +233,8 @@ def test_generate_value_integer_with_exclusive_bounds_stays_inside(fake):
         assert 11 <= value <= 19
 
 
-def test_generate_value_number_with_inverted_bounds_warns(fake):
-    warnings = []
+def test_generate_value_number_with_inverted_bounds_warns(fake: Faker) -> None:
+    warnings: list[str] = []
     value = generate_value(
         {"type": "number", "minimum": 5, "maximum": 1}, fake, warn=warnings.append
     )
@@ -242,7 +243,7 @@ def test_generate_value_number_with_inverted_bounds_warns(fake):
     assert any("inverted number bounds" in message for message in warnings)
 
 
-def test_generate_value_integer_with_huge_minimum_is_exact(fake):
+def test_generate_value_integer_with_huge_minimum_is_exact(fake: Faker) -> None:
     huge = 2**53 + 1
     schema = {"type": "integer", "minimum": huge, "maximum": huge}
 

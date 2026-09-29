@@ -14,7 +14,7 @@ def _strip_ansi(text: str) -> str:
     return ANSI.sub("", text)
 
 
-def test_routes_command_petstore_prints_paths_and_methods():
+def test_routes_command_petstore_prints_paths_and_methods() -> None:
     result = runner.invoke(app, ["routes", str(FIXTURES / "petstore.yaml")])
     assert result.exit_code == 0
     assert "/users" in result.stdout
@@ -22,7 +22,7 @@ def test_routes_command_petstore_prints_paths_and_methods():
     assert "GET" in result.stdout
 
 
-def test_start_command_defined():
+def test_start_command_defined() -> None:
     result = runner.invoke(app, ["start", "--help"])
     assert result.exit_code == 0
     stdout = _strip_ansi(result.stdout)

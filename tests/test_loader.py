@@ -12,21 +12,22 @@ from quackend.loader import (
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_load_openapi_petstore_resolves_refs():
+def test_load_openapi_petstore_resolves_refs() -> None:
     spec = load_openapi(FIXTURES / "petstore.yaml")
     users_get = next(op for p, m, op in iter_operations(spec) if p == "/users" and m == "get")
     schema = operation_response_schema(users_get)
+    assert schema is not None
     assert schema["type"] == "array"
     assert schema["items"]["properties"]["email"]["format"] == "email"
 
 
-def test_load_openapi_swagger2_returns_paths():
+def test_load_openapi_swagger2_returns_paths() -> None:
     spec = load_openapi(FIXTURES / "swagger2.yaml")
     paths = {p for p, _, _ in iter_operations(spec)}
     assert "/legacy" in paths
 
 
-def test_path_resource_strips_only_trailing_params():
+def test_path_resource_strips_only_trailing_params() -> None:
     assert path_resource("/pets") == "pets"
     assert path_resource("/users/{id}") == "users"
     assert path_resource("/api/v2/users/{user_id}/posts") == "api/v2/users/{user_id}/posts"
@@ -34,18 +35,21 @@ def test_path_resource_strips_only_trailing_params():
 
 
 @pytest.mark.parametrize("fixture", ["petstore.yaml", "react_local.yaml", "swagger2.yaml"])
-def test_load_openapi_all_fixtures_return_paths(fixture):
+def test_load_openapi_all_fixtures_return_paths(fixture: str) -> None:
     spec = load_openapi(FIXTURES / fixture)
     assert spec.get("paths")
 
 
-def test_operation_response_schema_first_2xx_returns_array():
+def test_operation_response_schema_first_2xx_returns_array() -> None:
     spec = load_openapi(FIXTURES / "petstore.yaml")
     users_get = next(op for p, m, op in iter_operations(spec) if p == "/users" and m == "get")
-    assert operation_response_schema(users_get)["type"] == "array"
+    schema = operation_response_schema(users_get)
+
+    assert schema is not None
+    assert schema["type"] == "array"
 
 
-def test_operation_response_schema_non_json_media_returns_none():
+def test_operation_response_schema_non_json_media_returns_none() -> None:
     operation = {
         "responses": {
             "200": {
@@ -58,7 +62,7 @@ def test_operation_response_schema_non_json_media_returns_none():
     assert operation_response_schema(operation) is None
 
 
-def test_operation_response_schema_mixed_media_returns_json():
+def test_operation_response_schema_mixed_media_returns_json() -> None:
     operation = {
         "responses": {
             "200": {
@@ -71,10 +75,13 @@ def test_operation_response_schema_mixed_media_returns_json():
         }
     }
 
-    assert operation_response_schema(operation)["type"] == "object"
+    schema = operation_response_schema(operation)
+
+    assert schema is not None
+    assert schema["type"] == "object"
 
 
-def test_operation_response_schema_json_with_charset_returns_schema():
+def test_operation_response_schema_json_with_charset_returns_schema() -> None:
     operation = {
         "responses": {
             "200": {
@@ -86,11 +93,17 @@ def test_operation_response_schema_json_with_charset_returns_schema():
         }
     }
 
-    assert operation_response_schema(operation)["type"] == "object"
+    schema = operation_response_schema(operation)
+
+    assert schema is not None
+    assert schema["type"] == "object"
 
 
-def test_operation_response_schema_swagger2_returns_array_schema():
+def test_operation_response_schema_swagger2_returns_array_schema() -> None:
     spec = load_openapi(FIXTURES / "swagger2.yaml")
     legacy_get = next(op for p, m, op in iter_operations(spec) if p == "/legacy" and m == "get")
 
-    assert operation_response_schema(legacy_get)["type"] == "array"
+    schema = operation_response_schema(legacy_get)
+
+    assert schema is not None
+    assert schema["type"] == "array"
