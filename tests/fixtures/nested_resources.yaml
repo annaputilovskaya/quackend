@@ -1,0 +1,32 @@
+openapi: 3.0.1
+info:
+  title: Nested resources
+  version: 1.0.0
+paths:
+  /orgs/{org_id}/members/{member_id}:
+    parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema: { type: string }
+      - name: member_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: Get member
+      responses:
+        "200":
+          description: Member
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+    delete:
+      summary: Delete member
+      responses:
+        "200":
+          description: Deleted

@@ -1,3 +1,5 @@
+import datetime
+import json
 import re
 
 import pytest
@@ -153,3 +155,96 @@ def test_generate_value_object_beyond_depth_stops_at_empty(fake):
     }
     value = generate_value(schema, fake)
     assert value["a"]["b"]["c"]["d"] == {}
+
+
+def test_generate_value_example_returns_a_detached_copy(fake):
+    example = {"id": "from-spec", "name": "fixed"}
+    value = generate_value({"type": "object", "example": example}, fake)
+
+    value["name"] = "changed"
+
+    assert example == {"id": "from-spec", "name": "fixed"}
+
+
+def test_generate_value_enum_returns_a_detached_copy(fake):
+    enum = [{"id": "a"}]
+    value = generate_value({"type": "object", "enum": enum}, fake)
+
+    value["id"] = "changed"
+
+    assert enum == [{"id": "a"}]
+
+
+def test_generate_value_example_with_yaml_date_returns_string(fake):
+    value = generate_value({"type": "string", "example": datetime.date(2024, 1, 15)}, fake)
+
+    assert value == "2024-01-15"
+
+
+def test_generate_value_example_with_yaml_date_warns(fake):
+    warnings = []
+    generate_value(
+        {"type": "string", "example": datetime.date(2024, 1, 15)}, fake, warn=warnings.append
+    )
+
+    assert any("not JSON" in message for message in warnings)
+
+
+def test_generate_value_example_with_nested_date_is_jsonable(fake):
+    value = generate_value(
+        {"type": "object", "example": {"when": datetime.date(2024, 1, 15)}}, fake
+    )
+
+    assert value == {"when": "2024-01-15"}
+    assert json.dumps(value)
+
+
+def test_generate_value_example_with_yaml_date_key_is_jsonable(fake):
+    value = generate_value(
+        {"type": "object", "example": {datetime.date(2024, 1, 15): "fixed"}}, fake
+    )
+
+    assert value == {"2024-01-15": "fixed"}
+    assert json.dumps(value)
+
+
+def test_generate_value_integer_with_inverted_bounds_warns(fake):
+    warnings = []
+    for _ in range(20):
+        value = generate_value(
+            {"type": "integer", "minimum": 100, "maximum": 6}, fake, warn=warnings.append
+        )
+        assert 6 <= value <= 100
+
+    assert any("inverted integer bounds" in message for message in warnings)
+
+
+def test_generate_value_integer_with_only_minimum_keeps_minimum(fake):
+    for _ in range(20):
+        assert generate_value({"type": "integer", "minimum": 100_000}, fake) >= 100_000
+
+
+def test_generate_value_integer_with_exclusive_bounds_stays_inside(fake):
+    for _ in range(20):
+        value = generate_value(
+            {"type": "integer", "exclusiveMinimum": 10, "exclusiveMaximum": 20}, fake
+        )
+        assert 11 <= value <= 19
+
+
+def test_generate_value_number_with_inverted_bounds_warns(fake):
+    warnings = []
+    value = generate_value(
+        {"type": "number", "minimum": 5, "maximum": 1}, fake, warn=warnings.append
+    )
+
+    assert 1 <= value <= 5
+    assert any("inverted number bounds" in message for message in warnings)
+
+
+def test_generate_value_integer_with_huge_minimum_is_exact(fake):
+    huge = 2**53 + 1
+    schema = {"type": "integer", "minimum": huge, "maximum": huge}
+
+    for _ in range(20):
+        assert generate_value(schema, fake) >= huge

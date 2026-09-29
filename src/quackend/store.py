@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
 from typing import Any
 
@@ -141,7 +142,10 @@ class QuackStore:
         return str(max(numbers, default=0) + 1)
 
     def create(self, resource: str, data: dict[str, Any]) -> dict[str, Any]:
-        """Create and store a new item, assigning the next free key.
+        """Create and store a new item under the next free key.
+
+        Any ``id`` in the payload is ignored: identity is assigned by the store,
+        so the key of a stored item always equals its ``id``.
 
         Args:
             resource: the collection name.
@@ -151,12 +155,9 @@ class QuackStore:
             The stored item, including its assigned id.
         """
         key = self._next_key(resource)
-        item = dict(data)
-        if "id" not in item:
-            item["id"] = key
-        if resource not in self._collections:
-            self._collections[resource] = {}
-        self._collections[resource][key] = item
+        item = copy.deepcopy(dict(data))
+        item["id"] = key
+        self._collections.setdefault(resource, {})[key] = item
         return item
 
     def update(

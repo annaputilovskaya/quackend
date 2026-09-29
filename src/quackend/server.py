@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from rich.console import Console
+from rich.markup import escape as escape_markup
 
 from quackend.loader import iter_operations, operation_response_schema, path_resource
 from quackend.store import QuackStore
 
 _CONSOLE = Console()
+_MAX_BODY_BYTES = 1_048_576
 
 
 def _response_status(operation: dict[str, Any]) -> int:
@@ -29,8 +32,62 @@ def _response_status(operation: dict[str, Any]) -> int:
     return 200
 
 
-def _as_dict(payload: Any) -> dict[str, Any]:
-    return payload if isinstance(payload, dict) else {"payload": payload}
+def _ok_response(content: Mapping[str, Any] | Sequence[Any], status: int) -> Response:
+    if status == 204:
+        return Response(status_code=204)
+    return JSONResponse(content=content, status_code=status)
+
+
+def _identity_key(values: Mapping[str, Any], params: Sequence[str]) -> str:
+    """Return the store key addressing every path parameter of a route.
+
+    Nested collections repeat a parent segment, so the first parameter alone
+    would address the same item for every child of that parent.
+
+    Args:
+        values: the ASGI path parameters of the request.
+        params: the ordered parameter names declared by the path template.
+
+    Returns:
+        A composite key such as ``"orgA/alice"``, or ``""`` without parameters.
+    """
+    return "/".join(str(values.get(name, "")) for name in params)
+
+
+async def _json_object(request: Request) -> dict[str, Any]:
+    """Read a bounded JSON object body, or fail with a 4xx status.
+
+    The size check uses the declared content-length; a chunked body without
+    that header is parsed as-is.
+
+    Args:
+        request: the incoming request.
+
+    Returns:
+        The decoded JSON object.
+
+    Raises:
+        HTTPException: 415 for a non-JSON content type, 413 for a body over
+            _MAX_BODY_BYTES, 400 for an unparsable or non-object body.
+    """
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media_type and media_type != "application/json":
+        raise HTTPException(status_code=415, detail="expected application/json")
+    declared = request.headers.get("content-length")
+    if (
+        declared is not None
+        and declared.isascii()
+        and declared.isdigit()
+        and int(declared) > _MAX_BODY_BYTES
+    ):
+        raise HTTPException(status_code=413, detail="request body too large")
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="malformed JSON body") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return payload
 
 
 def _seed_resources(
@@ -78,7 +135,7 @@ def build_app(
 
     def warn(message: str) -> None:
         if not quiet:
-            _CONSOLE.print(f"[yellow][WARNING][/yellow] {message}")
+            _CONSOLE.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
 
     _seed_resources(spec, resolved_store, warn)
 
@@ -111,51 +168,42 @@ def build_app(
             schema: dict[str, Any] | None,
             list_response: bool,
         ) -> None:
-            param_name = params[0] if params else ""
-
             @app.api_route(route_path, methods=[m.upper()], include_in_schema=False)
-            async def _handler(request: Request) -> JSONResponse:
+            async def _handler(request: Request) -> Response:
                 values = request.path_params
+                key = _identity_key(values, params)
                 if m == "get":
                     if list_response:
-                        return JSONResponse(
-                            content=resolved_store.get_all(res), status_code=ok_status
-                        )
-                    if param_name:
+                        return _ok_response(resolved_store.get_all(res), ok_status)
+                    if params:
                         if schema is None:
-                            payload = resolved_store.get(res, values.get(param_name, ""))
+                            payload = resolved_store.get(res, key)
                             if payload is None:
                                 return JSONResponse({"error": "not found"}, status_code=404)
                         else:
-                            payload = resolved_store.first_or_create(
-                                res, values.get(param_name, ""), schema, warn=warn
-                            )
-                        return JSONResponse(content=payload, status_code=ok_status)
+                            payload = resolved_store.first_or_create(res, key, schema, warn=warn)
+                        return _ok_response(payload, ok_status)
                     if schema is not None:
                         payload = resolved_store.first(res)
                         if payload is None:
                             payload = resolved_store.first_or_create(res, "", schema, warn=warn)
-                        return JSONResponse(content=payload, status_code=ok_status)
+                        return _ok_response(payload, ok_status)
                     items = resolved_store.get_all(res)
-                    return JSONResponse(content=items, status_code=ok_status)
+                    return _ok_response(items, ok_status)
                 if m == "post":
-                    return JSONResponse(
-                        content=resolved_store.create(res, _as_dict(await request.json())),
-                        status_code=201,
+                    return _ok_response(
+                        resolved_store.create(res, await _json_object(request)),
+                        ok_status,
                     )
                 if m in ("put", "patch"):
-                    updated = resolved_store.update(
-                        res, values.get(param_name, ""), _as_dict(await request.json())
-                    )
+                    updated = resolved_store.update(res, key, await _json_object(request))
                     if updated is None:
                         return JSONResponse({"error": "not found"}, status_code=404)
-                    return JSONResponse(content=updated, status_code=200)
+                    return _ok_response(updated, ok_status)
                 if m == "delete":
-                    if not resolved_store.delete(res, values.get(param_name, "")):
+                    if not resolved_store.delete(res, key):
                         return JSONResponse({"error": "not found"}, status_code=404)
-                    return JSONResponse(
-                        content={"deleted": values.get(param_name)}, status_code=200
-                    )
+                    return _ok_response({"deleted": key}, ok_status)
                 return JSONResponse({"error": "not implemented"}, status_code=405)
 
         _register(path_template, method, resource, route_params, status, response_schema, is_list)

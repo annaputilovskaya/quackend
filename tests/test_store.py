@@ -107,3 +107,12 @@ def test_first_returns_first_seeded_item(store):
 
     assert store.first("widgets")["id"] == "1"
     assert store.first("missing") is None
+
+
+def test_create_ignores_client_supplied_id(store):
+    store.ensure("users", USER_SCHEMA)
+
+    created = store.create("users", {"id": "custom", "name": "Bob"})
+
+    assert created["id"] == str(COLLECTION_SIZE + 1)
+    assert store.get("users", created["id"]) == created
