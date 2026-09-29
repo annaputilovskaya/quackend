@@ -7,6 +7,7 @@ Thanks for your interest.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate        # Windows
+source .venv/bin/activate    # Linux/macOS
 pip install -e ".[dev]"
 ```
 
@@ -26,6 +27,17 @@ Run all checks with a single command (see `docs/CONVENTIONS.md` §7):
 .\scripts\dod.ps1      # Windows
 ./scripts/dod.sh       # Linux/macOS/CI
 ```
+
+On POSIX `scripts/dod.sh` is committed with the executable bit set; if your
+checkout lost it, run it through the interpreter instead of
+`chmod +x scripts/dod.sh` before your first commit:
+
+```bash
+bash ./scripts/dod.sh
+```
+
+CI runs the very same script on every push and pull request, on Linux and on
+Windows, against Python 3.10 and 3.13 (see `.github/workflows/ci.yml`).
 
 ## Commits
 

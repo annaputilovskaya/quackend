@@ -36,6 +36,7 @@ quackend = "quackend.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quackend"]
+artifacts = ["src/quackend/py.typed"]
 
 [tool.hatch.version]
 path = "src/quackend/__init__.py"
@@ -77,10 +78,6 @@ strict = true
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-strict = false
 
 [[tool.mypy.overrides]]
 module = "prance"

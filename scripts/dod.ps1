@@ -16,7 +16,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "ruff format failed" }
 
     Write-Host "[4/5] Verifying Static Types (mypy)..." -ForegroundColor Blue
-    mypy src
+    mypy src tests
     if ($LASTEXITCODE -ne 0) { throw "mypy failed" }
 
     Write-Host "[5/5] Running Tests & Coverage (pytest)..." -ForegroundColor Blue

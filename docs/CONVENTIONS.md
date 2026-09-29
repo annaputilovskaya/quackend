@@ -92,18 +92,14 @@ strict = true
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-strict = false
 ```
 
 - `convention = "google"` жёстко фиксирует Google style для докстрингов (вместо ручных ignore).
 - `ban-relative-imports = "all"`: относительные импорты внутри пакета запрещены — только абсолютные `from quackend.* import ...`.
 - `per-file-ignores = { "tests/**" = ["D"] }`: **исключение** — тесты не обязаны иметь докстринги; правило `D` отключено только для `tests/**`. Тесты регулируются §5 (нейминг `test_<unit>_<scenario>_<expected>`, arrange/act/assert), а требование докстрингов §3 относится к публичному API модулей `src/`, а не к тестам.
-- mypy: строгий на `src/`, **умеренный** на `tests/` (override, а не exclude — тесты тоже проверяются, но без строгости); флаги `warn_*` ловят typos в конфиге и устаревшие `# type: ignore`.
+- mypy: **один конфиг на `src/` и `tests/`** — гейт запускает `mypy src tests`, поэтому тесты проверяются с той же строгостью и аннотации обязательны в них не меньше, чем в `src/`. Ослабляющего override для `tests.*` в конфиге нет намеренно: мёртвая секция, которую `warn_unused_configs` всё равно отметит, ничего не проверяет (§4.2). Флаги `warn_*` ловят typos в конфиге, устаревшие `# type: ignore` и неисполняемые секции.
 
-Обязательные проверки перед PR (см. §7): `lint-imports`, `ruff check`, `ruff format --check`, `mypy src`, покрытие.
+Обязательные проверки перед PR (см. §7): `lint-imports`, `ruff check`, `ruff format --check`, `mypy src tests`, покрытие.
 
 ### 1.5 Версионирование пакета
 
@@ -221,11 +217,11 @@ strict = false
 lint-imports
 ruff check .
 ruff format --check .
-mypy src
+mypy src tests
 python -m coverage run -m pytest && python -m coverage report --fail-under=80
 ```
 
-`mypy src` = строгая проверка продакшн-кода (тесты попадают через override, когда mypy запущен без `src`-аргумента).
+`mypy src tests` = строгая проверка продакшн-кода **и** тестов: гейт исполняет ровно то, что §1.4 объявляет, и не может «разрешить» тесты неаннотированными (см. §4.2 — такое смягчение должно быть записано явно, а не молча лежать в конфиге).
 
 Все пять зелёные + сообщение коммита корректно + без изменений вне задачи → PR.
 

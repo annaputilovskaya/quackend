@@ -20,6 +20,8 @@ from quackend.store import QuackStore
 _CONSOLE = Console()
 _MAX_BODY_BYTES = 1_048_576
 
+__all__ = ["build_app"]
+
 
 def _response_status(operation: dict[str, Any]) -> int:
     for raw_status in sorted(operation.get("responses") or {}):
