@@ -44,13 +44,15 @@ def test_list_endpoint_items_are_flat_user_objects() -> None:
         assert "value" not in item
 
 
-def test_item_endpoint_by_id() -> None:
-    client, _ = make_client()
+def test_get_by_id_returns_the_stored_item() -> None:
+    client, store = make_client()
 
+    stored = store.get("users", "5")
     response = client.get("/users/5")
 
     assert response.status_code == 200
-    assert response.json()["id"] == "5"
+    assert stored is not None
+    assert response.json() == stored
 
 
 def test_item_unknown_id_generates_from_schema() -> None:
@@ -72,20 +74,33 @@ def test_post_then_get_returns_created() -> None:
     assert fetched["name"] == "Bob"
 
 
-def test_put_persists() -> None:
+def test_put_persists_the_update() -> None:
     client, _ = make_client()
 
     response = client.put("/users/3", json={"name": "Renamed"})
 
     assert response.status_code == 200
     assert client.get("/users/3").json()["name"] == "Renamed"
+
+
+def test_put_unknown_id_answers_not_found() -> None:
+    client, _ = make_client()
+
     assert client.put("/users/999", json={}).status_code == 404
 
 
-def test_delete_removes_then_get_regenerates() -> None:
-    client, _ = make_client()
+def test_delete_removes_the_item_from_the_store() -> None:
+    client, store = make_client()
 
     assert client.delete("/users/4").status_code == 200
+    assert store.get("users", "4") is None
+
+
+def test_get_after_delete_regenerates_the_item() -> None:
+    client, _ = make_client()
+
+    client.delete("/users/4")
+
     assert client.get("/users/4").json()["id"] == "4"
 
 

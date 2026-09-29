@@ -96,14 +96,19 @@ def test_ensure_broken_schema_propagates_warning(store: QuackStore) -> None:
     assert any("missing type" in w for w in warnings)
 
 
-def test_first_or_create_generates_and_persists(store: QuackStore) -> None:
+def test_first_or_create_persists_the_generated_item(store: QuackStore) -> None:
     schema = {"type": "object", "properties": {"name": {"type": "string"}}}
 
     created = store.first_or_create("widgets", "abc", schema)
+    stored = store.get("widgets", "abc")
     again = store.first_or_create("widgets", "abc", schema)
 
     assert created["id"] == "abc"
-    assert again is created
+    # Persistence, not object identity: the second call has to hand back the very
+    # item the store holds, otherwise it regenerated a fresh name under the same
+    # key. Comparing values keeps a store that hands out copies legal.
+    assert stored == created
+    assert again == created
 
 
 def test_first_or_create_returns_seeded_item(store: QuackStore) -> None:
