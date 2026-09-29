@@ -587,7 +587,7 @@ def test_request_without_a_content_type_header_answers_400():
 
 
 # No content key at all: operation_response_schema returns None, so the route reads
-# the store instead of generating, and an empty store means the 404 branch runs.
+# the store instead of generating, and whatever is under the key is served as is.
 def make_schemaless_nested_spec():
     return {
         "openapi": "3.0.0",
@@ -601,9 +601,103 @@ def make_schemaless_nested_spec():
 
 
 def test_nested_get_without_a_response_schema_answers_404():
-    client = TestClient(build_app(make_schemaless_nested_spec(), quiet=True))
+    # The store is seeded by hand because a schema-less GET never generates: only a
+    # store that already holds the composite key can tell the nested identity apart
+    # from a key built out of the first path parameter, which is what makes the
+    # served member below the assertion that the name promises.
+    spec = make_schemaless_nested_spec()
+    store = QuackStore()
+    member = {"type": "object", "properties": {"name": {"type": "string"}}}
+    alice = store.first_or_create("orgs/{org_id}/members", "orgA/alice", member)
+    store.first_or_create("orgs/{org_id}/members", "orgA/bob", member)
+    client = TestClient(build_app(spec, store, quiet=True))
 
-    response = client.get("/orgs/orgA/members/alice")
+    served = client.get("/orgs/orgA/members/alice")
+    missing = client.get("/orgs/orgB/members/alice")
 
-    assert response.status_code == 404
-    assert response.json() == {"error": "not found"}
+    assert served.status_code == 200
+    assert served.json() == alice
+    assert missing.status_code == 404
+    assert missing.json() == {"error": "not found"}
+
+
+# A parameter-less GET with no 2xx JSON schema, which no seeding path covers: the
+# store is filled by the POST on the same path instead, since path_resource drops
+# no segment here and both verbs address one collection.
+def make_schemaless_collection_spec():
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "schemaless", "version": "1.0.0"},
+        "paths": {
+            "/telemetry": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "post": {"responses": {"200": {"description": "ok"}}},
+            }
+        },
+    }
+
+
+def test_schemaless_collection_get_returns_every_stored_item():
+    client = TestClient(build_app(make_schemaless_collection_spec(), quiet=True))
+    client.post("/telemetry", json={"name": "first"})
+    client.post("/telemetry", json={"name": "second"})
+
+    response = client.get("/telemetry")
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == ["1", "2"]
+    assert [item["name"] for item in response.json()] == ["first", "second"]
+
+
+# The array schema is what makes this a list route, so the collection is served
+# from the list branch with a 204; /telemetry above declares 204 with no content
+# and therefore never gets there.
+def make_204_list_spec():
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "list204", "version": "1.0.0"},
+        "paths": {
+            "/metrics": {
+                "get": {
+                    "responses": {
+                        "204": {
+                            "description": "accepted",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"id": {"type": "string"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_list_route_with_declared_204_has_no_body():
+    client = TestClient(build_app(make_204_list_spec(), quiet=True))
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+# httpx hands the header value to the ASGI scope unstripped, so the whitespace
+# reaches _json_object through the client as well as through a real parser.
+def test_content_type_padded_with_whitespace_is_read_as_json():
+    client = TestClient(build_app(make_status_spec(), quiet=True))
+
+    response = client.post(
+        "/jobs", content=b'{"name": "job"}', headers={"content-type": "  application/json  "}
+    )
+
+    assert response.status_code == 202
+    assert response.json()["name"] == "job"

@@ -2,9 +2,12 @@ import re
 from io import StringIO
 
 import rich
+import rich.table
 from rich.console import Console
 
 from quackend.reporting import render_route_table
+
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 # A raw dict rather than load_openapi: the defect is in rendering, not parsing, and
@@ -36,15 +39,30 @@ def test_route_table_renders_ordinary_paths_and_keeps_column_style(monkeypatch):
     # rendered table rather than the Table object: capfd sees a non-tty and Rich
     # would drop the colour the Method column is supposed to keep.
     buffer = StringIO()
-    console = Console(file=buffer, force_terminal=True, color_system="standard", width=200)
+    console = Console(file=buffer, force_terminal=True, color_system="standard", width=120)
     monkeypatch.setattr(rich, "get_console", lambda: console)
+
+    # box=None is the test's own choice rather than Rich's default: with a box the
+    # cells are separated by a glyph of Rich's choosing, and every assertion below
+    # would then fail for a reason that has nothing to do with the escaping.
+    class BoxlessTable(rich.table.Table):
+        def __init__(self, *args, **kwargs):
+            kwargs["box"] = None
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(rich.table, "Table", BoxlessTable)
 
     render_route_table(make_spec("/users", "/users/{id}"))
 
-    out = buffer.getvalue()
-    # "." cannot cross a newline and the only thing between two cells is padding
-    # and the table border, so these pin the Method cell and the Path cell that
-    # follows it inside one rendered row, rather than two cells of the column.
-    assert re.search(r"\x1b\[36m.*?GET", out)
-    assert re.search(r"GET.*?│ +/users *│", out)
-    assert re.search(r"GET.*?│ +/users/\{id\} *│", out)
+    rows = [line for line in buffer.getvalue().splitlines() if "GET" in line]
+
+    assert len(rows) == 2
+    for row in rows:
+        # The Method cell still carries the cyan column style after the path was
+        # escaped, and the assertions read one rendered line at a time so that
+        # "." below can only ever mean "this row".
+        assert re.search(r"\x1b\[36m.*GET", row)
+        # Only padding can come between two cells once the test owns the box, so a
+        # match here puts the Method cell and the Path cell that follows it in the
+        # same row, in that order.
+        assert re.fullmatch(r" *GET +/users(?:/\{id\})? *", ANSI_ESCAPE.sub("", row))
