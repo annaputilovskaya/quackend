@@ -1,0 +1,96 @@
+name: Bug report
+description: Something in quackend does not behave as documented
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. quackend generates mock data from an OpenAPI spec,
+        so a spec that behaves differently from what you expect is the most
+        common cause.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The observed behaviour, including the error message if there is one.
+      placeholder: The server exits with a traceback instead of serving /users.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      placeholder: A running server answering 200 with 10 generated users.
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Command that reproduces it
+      description: The exact quackend invocation, flags included.
+      placeholder: quackend start petstore.yaml --port 8000
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec
+    attributes:
+      label: OpenAPI spec
+      description: >-
+        The spec, or the smallest fragment of it that still reproduces the
+        problem. You can attach a file by dragging it into this box.
+      render: yaml
+
+  - type: input
+    id: quackend-version
+    attributes:
+      label: quackend version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.12.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How quackend was installed
+      options:
+        - pip install quackend
+        - pip install -e ".[dev]" from a clone
+        - other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched the open issues for the same problem.
+          required: true
+        - label: >-
+            I removed tokens, hosts and private data from anything I pasted here.
+          required: false
