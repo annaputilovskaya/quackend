@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import random
-import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
@@ -14,24 +13,13 @@ from fastapi.responses import JSONResponse
 from rich.console import Console
 from rich.markup import escape as escape_markup
 
-from quackend.loader import iter_operations, operation_response_schema, path_resource
+from quackend.loader import Operation, iter_operations
 from quackend.store import QuackStore
 
 _CONSOLE = Console()
 _MAX_BODY_BYTES = 1_048_576
 
 __all__ = ["build_app"]
-
-
-def _response_status(operation: dict[str, Any]) -> int:
-    for raw_status in sorted(operation.get("responses") or {}):
-        try:
-            code = int(raw_status)
-        except (TypeError, ValueError):
-            continue
-        if 200 <= code < 300:
-            return code
-    return 200
 
 
 def _ok_response(content: Mapping[str, Any] | Sequence[Any], status: int) -> Response:
@@ -93,24 +81,102 @@ async def _json_object(request: Request) -> dict[str, Any]:
 
 
 def _seed_resources(
-    spec: Mapping[str, Any],
+    operations: Sequence[Operation],
     store: QuackStore,
-    warn: Callable[[str], None] | None,
+    warn: Callable[[str], None],
 ) -> None:
-    for path, method, operation in iter_operations(spec):
-        if method != "get":
-            continue
-        schema = operation_response_schema(operation)
-        if schema:
-            item_schema = _item_schema(schema)
-            store.ensure(path_resource(path), item_schema, warn=warn)
+    for operation in operations:
+        if operation.method == "get" and operation.item_schema is not None:
+            store.ensure(operation.resource, operation.item_schema, warn=warn)
 
 
-def _item_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    items = schema.get("items")
-    if schema.get("type") == "array" and isinstance(items, dict):
-        return items
-    return schema
+async def _handle_get(
+    operation: Operation,
+    store: QuackStore,
+    request: Request,
+    warn: Callable[[str], None],
+) -> Response:
+    key = _identity_key(request.path_params, operation.params)
+    if operation.is_list:
+        return _ok_response(store.get_all(operation.resource), operation.ok_status)
+    if operation.params:
+        if operation.item_schema is None:
+            payload = store.get(operation.resource, key)
+            if payload is None:
+                return JSONResponse({"error": "not found"}, status_code=404)
+        else:
+            payload = store.first_or_create(
+                operation.resource, key, operation.item_schema, warn=warn
+            )
+        return _ok_response(payload, operation.ok_status)
+    if operation.item_schema is not None:
+        payload = store.first(operation.resource)
+        if payload is None:
+            payload = store.first_or_create(
+                operation.resource, "", operation.item_schema, warn=warn
+            )
+        return _ok_response(payload, operation.ok_status)
+    return _ok_response(store.get_all(operation.resource), operation.ok_status)
+
+
+async def _handle_post(
+    operation: Operation,
+    store: QuackStore,
+    request: Request,
+    warn: Callable[[str], None],
+) -> Response:
+    return _ok_response(
+        store.create(operation.resource, await _json_object(request)),
+        operation.ok_status,
+    )
+
+
+async def _handle_update(
+    operation: Operation,
+    store: QuackStore,
+    request: Request,
+    warn: Callable[[str], None],
+) -> Response:
+    key = _identity_key(request.path_params, operation.params)
+    updated = store.update(operation.resource, key, await _json_object(request))
+    if updated is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _ok_response(updated, operation.ok_status)
+
+
+async def _handle_delete(
+    operation: Operation,
+    store: QuackStore,
+    request: Request,
+    warn: Callable[[str], None],
+) -> Response:
+    key = _identity_key(request.path_params, operation.params)
+    if not store.delete(operation.resource, key):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return _ok_response({"deleted": key}, operation.ok_status)
+
+
+_Handler = Callable[[Operation, QuackStore, Request, Callable[[str], None]], Awaitable[Response]]
+
+_VERBS: dict[str, _Handler] = {
+    "get": _handle_get,
+    "post": _handle_post,
+    "put": _handle_update,
+    "patch": _handle_update,
+    "delete": _handle_delete,
+}
+
+
+def _endpoint(
+    handler: _Handler,
+    operation: Operation,
+    store: QuackStore,
+    warn: Callable[[str], None],
+) -> Callable[[Request], Awaitable[Response]]:
+    async def _view(request: Request) -> Response:
+        return await handler(operation, store, request, warn)
+
+    return _view
 
 
 def build_app(
@@ -139,7 +205,8 @@ def build_app(
         if not quiet:
             _CONSOLE.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
 
-    _seed_resources(spec, resolved_store, warn)
+    operations = list(iter_operations(spec))
+    _seed_resources(operations, resolved_store, warn)
 
     app = FastAPI(title=(spec.get("info") or {}).get("title", "quackend"))
 
@@ -154,60 +221,15 @@ def build_app(
             await asyncio.sleep(latency_ms / 1000)
         return await call_next(request)
 
-    for path_template, method, operation in iter_operations(spec):
-        route_params = re.findall(r"\{(\w+)\}", path_template)
-        resource = path_resource(path_template)
-        status = _response_status(operation)
-        response_schema = operation_response_schema(operation)
-        is_list = response_schema is not None and response_schema.get("type") == "array"
-
-        def _register(
-            route_path: str,
-            m: str,
-            res: str,
-            params: list[str],
-            ok_status: int,
-            schema: dict[str, Any] | None,
-            list_response: bool,
-        ) -> None:
-            @app.api_route(route_path, methods=[m.upper()], include_in_schema=False)
-            async def _handler(request: Request) -> Response:
-                values = request.path_params
-                key = _identity_key(values, params)
-                if m == "get":
-                    if list_response:
-                        return _ok_response(resolved_store.get_all(res), ok_status)
-                    if params:
-                        if schema is None:
-                            payload = resolved_store.get(res, key)
-                            if payload is None:
-                                return JSONResponse({"error": "not found"}, status_code=404)
-                        else:
-                            payload = resolved_store.first_or_create(res, key, schema, warn=warn)
-                        return _ok_response(payload, ok_status)
-                    if schema is not None:
-                        payload = resolved_store.first(res)
-                        if payload is None:
-                            payload = resolved_store.first_or_create(res, "", schema, warn=warn)
-                        return _ok_response(payload, ok_status)
-                    items = resolved_store.get_all(res)
-                    return _ok_response(items, ok_status)
-                if m == "post":
-                    return _ok_response(
-                        resolved_store.create(res, await _json_object(request)),
-                        ok_status,
-                    )
-                if m in ("put", "patch"):
-                    updated = resolved_store.update(res, key, await _json_object(request))
-                    if updated is None:
-                        return JSONResponse({"error": "not found"}, status_code=404)
-                    return _ok_response(updated, ok_status)
-                if m == "delete":
-                    if not resolved_store.delete(res, key):
-                        return JSONResponse({"error": "not found"}, status_code=404)
-                    return _ok_response({"deleted": key}, ok_status)
-                return JSONResponse({"error": "not implemented"}, status_code=405)
-
-        _register(path_template, method, resource, route_params, status, response_schema, is_list)
+    for operation in operations:
+        handler = _VERBS.get(operation.method)
+        if handler is None:
+            continue
+        app.add_api_route(
+            operation.path,
+            _endpoint(handler, operation, resolved_store, warn),
+            methods=[operation.method.upper()],
+            include_in_schema=False,
+        )
 
     return app

@@ -64,6 +64,49 @@ def test_item_unknown_id_generates_from_schema() -> None:
     assert response.json()["id"] == "999"
 
 
+def make_array_detail_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "array-detail", "version": "1.0.0"},
+        "paths": {
+            "/widgets/{id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"name": {"type": "string"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_array_response_on_a_detail_route_serves_the_collection() -> None:
+    client = TestClient(build_app(make_array_detail_spec()))
+
+    body = client.get("/widgets/7").json()
+
+    # list-first: an array response wins over the path parameter, so the route
+    # serves its collection and never wraps the array in a "value" field. A2 moved
+    # this decision into a verb table, and the order of the is_list and params
+    # branches is the contract it had to preserve.
+    assert isinstance(body, list)
+    assert all(isinstance(item, dict) and "value" not in item for item in body)
+    assert all(isinstance(item["name"], str) for item in body)
+
+
 def test_post_then_get_returns_created() -> None:
     client, _ = make_client()
 
