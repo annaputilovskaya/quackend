@@ -10,16 +10,17 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from rich.console import Console
-from rich.markup import escape as escape_markup
 
 from quackend.loader import Operation, iter_operations
 from quackend.store import QuackStore, StoreProtocol
 
-_CONSOLE = Console()
 _MAX_BODY_BYTES = 1_048_576
 
 __all__ = ["build_app"]
+
+
+def _null_warn(_message: str) -> None:
+    """Discard a fail-soft message."""
 
 
 def _ok_response(content: Mapping[str, Any] | Sequence[Any], status: int) -> Response:
@@ -185,7 +186,7 @@ def build_app(
     *,
     latency_ms: int = 0,
     fail_rate: float = 0.0,
-    quiet: bool = False,
+    warn: Callable[[str], None] | None = None,
 ) -> FastAPI:
     """Build a FastAPI app serving generated mock data for every spec operation.
 
@@ -194,19 +195,17 @@ def build_app(
         store: an optional shared store; a fresh one is created otherwise.
         latency_ms: artificial delay applied to every request in milliseconds.
         fail_rate: probability in [0, 1] that a request fails with HTTP 500.
-        quiet: when True, suppress generator warning output.
+        warn: an optional callback receiving fail-soft messages. Nothing is
+            printed by the library; the caller decides how to surface them.
 
     Returns:
         A configured FastAPI application.
     """
     resolved_store = store if store is not None else QuackStore()
-
-    def warn(message: str) -> None:
-        if not quiet:
-            _CONSOLE.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
+    emit = warn if warn is not None else _null_warn
 
     operations = list(iter_operations(spec))
-    _seed_resources(operations, resolved_store, warn)
+    _seed_resources(operations, resolved_store, emit)
 
     app = FastAPI(title=(spec.get("info") or {}).get("title", "quackend"))
 
@@ -227,7 +226,7 @@ def build_app(
             continue
         app.add_api_route(
             operation.path,
-            _endpoint(handler, operation, resolved_store, warn),
+            _endpoint(handler, operation, resolved_store, emit),
             methods=[operation.method.upper()],
             include_in_schema=False,
         )

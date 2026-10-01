@@ -60,3 +60,47 @@ def test_start_seeds_the_store_with_the_requested_seed(monkeypatch: pytest.Monke
 
     assert result.exit_code == 0
     assert seeded == [42]
+
+
+def start_with_recorder(monkeypatch: pytest.MonkeyPatch) -> tuple[CliRunner, dict[str, object]]:
+    seen: dict[str, object] = {}
+
+    def fake_build_app(*build_args: object, **build_kwargs: object) -> object:
+        seen.update(build_kwargs)
+        warn = build_kwargs.get("warn")
+        if callable(warn):
+            warn("unsupported type 'weird-unknown-type'")
+        return object()
+
+    monkeypatch.setattr(cli_module, "load_openapi", lambda _: {"paths": {}})
+    monkeypatch.setattr(cli_module, "build_app", fake_build_app)
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: None)
+    return runner, seen
+
+
+def test_start_prints_warnings_through_the_console(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli, seen = start_with_recorder(monkeypatch)
+
+    result = cli.invoke(app, ["start", "spec.yaml"])
+
+    assert result.exit_code == 0
+    assert callable(seen["warn"])
+    assert "unsupported type 'weird-unknown-type'" in _strip_ansi(result.stdout)
+
+
+def test_start_swallows_warnings_when_quiet(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli, seen = start_with_recorder(monkeypatch)
+
+    result = cli.invoke(app, ["start", "spec.yaml", "--quiet"])
+
+    assert result.exit_code == 0
+    assert seen["warn"] is None
+    assert "weird-unknown-type" not in result.stdout
+
+
+def test_emit_warning_escapes_rich_markup(capsys: pytest.CaptureFixture[str]) -> None:
+    cli_module._emit_warning("unsupported type '[/]'")
+
+    assert "[/]" in _strip_ansi(capsys.readouterr().out)

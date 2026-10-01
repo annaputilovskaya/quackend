@@ -4,14 +4,24 @@ from __future__ import annotations
 
 import typer
 import uvicorn
+from rich.markup import escape as escape_markup
 
 from quackend import __version__
 from quackend.loader import load_openapi
-from quackend.reporting import render_route_table
+from quackend.reporting import console, render_route_table
 from quackend.server import build_app
 from quackend.store import QuackStore
 
 app = typer.Typer(add_completion=False)
+
+
+def _emit_warning(message: str) -> None:
+    """Print a generator warning on the shared console.
+
+    Args:
+        message: the fail-soft message reported by the library.
+    """
+    console.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
 
 
 @app.callback()
@@ -60,7 +70,13 @@ def start(
     render_route_table(spec_data)
     if not quiet:
         typer.echo(f"quackend v{__version__}")
-    app_obj = build_app(spec_data, store, latency_ms=latency, fail_rate=fail_rate, quiet=quiet)
+    app_obj = build_app(
+        spec_data,
+        store,
+        latency_ms=latency,
+        fail_rate=fail_rate,
+        warn=None if quiet else _emit_warning,
+    )
     if not quiet:
         typer.echo(f"Quack! Your mock server is running on {host}:{port}")
     uvicorn.run(app_obj, host=host, port=port, log_level="warning" if quiet else "info")

@@ -7,9 +7,12 @@ from typing import Any
 
 import rich
 import rich.table
+from rich.console import Console
 from rich.markup import escape as escape_markup
 
 from quackend.loader import iter_operations
+
+console = Console()
 
 
 def render_route_table(spec: Mapping[str, Any]) -> rich.table.Table:
@@ -29,5 +32,5 @@ def render_route_table(spec: Mapping[str, Any]) -> rich.table.Table:
         # the run and "/items/[id]" would print as "/items/". The method column keeps
         # its style, because that one is a column style and not cell content.
         table.add_row(operation.method.upper(), escape_markup(operation.path))
-    rich.get_console().print(table)
+    console.print(table)
     return table

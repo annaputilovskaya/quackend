@@ -284,29 +284,22 @@ def make_weird_spec() -> dict[str, Any]:
     }
 
 
-def test_fail_soft_unsupported_schema_does_not_crash(capfd: pytest.CaptureFixture[str]) -> None:
+def test_fail_soft_unsupported_schema_does_not_crash() -> None:
+    messages: list[str] = []
     spec = make_weird_spec()
 
-    app = build_app(spec)
+    app = build_app(spec, warn=messages.append)
     client = TestClient(app)
     response = client.get("/items")
-    out = capfd.readouterr().out
 
     assert response.status_code == 200
-    assert "[WARNING]" in out
-    assert "weird-unknown-type" in out
+    assert any("weird-unknown-type" in message for message in messages)
 
 
-def test_quiet_suppresses_warnings(capfd: pytest.CaptureFixture[str]) -> None:
-    spec = make_weird_spec()
+def test_build_app_prints_no_warning_of_its_own(capfd: pytest.CaptureFixture[str]) -> None:
+    build_app(make_weird_spec())
 
-    build_app(spec, quiet=True)
-    quiet_out = capfd.readouterr().out
-    build_app(spec, quiet=False)
-    loud_out = capfd.readouterr().out
-
-    assert "[WARNING]" not in quiet_out
-    assert "[WARNING]" in loud_out
+    assert "WARNING" not in capfd.readouterr().out
 
 
 def make_example_spec() -> dict[str, Any]:
@@ -343,7 +336,7 @@ def make_example_spec() -> dict[str, Any]:
 
 
 def test_list_endpoint_with_item_example_has_unique_ids() -> None:
-    client = TestClient(build_app(make_example_spec(), quiet=True))
+    client = TestClient(build_app(make_example_spec()))
 
     body = client.get("/items").json()
 
@@ -355,14 +348,14 @@ def test_build_app_does_not_mutate_the_spec_dict() -> None:
     spec = make_example_spec()
     before = copy.deepcopy(spec)
 
-    build_app(spec, quiet=True)
+    build_app(spec)
 
     assert spec == before
 
 
 def test_get_with_yaml_date_example_answers_json() -> None:
     spec = load_openapi(FIXTURES / "yaml_date.yaml")
-    client = TestClient(build_app(spec, quiet=True))
+    client = TestClient(build_app(spec))
 
     response = client.get("/d")
 
@@ -382,7 +375,7 @@ def test_post_with_client_id_is_retrievable_by_returned_id() -> None:
 def make_nested_resources_client() -> tuple[TestClient, QuackStore]:
     spec = load_openapi(FIXTURES / "nested_resources.yaml")
     store = QuackStore()
-    return TestClient(build_app(spec, store, quiet=True)), store
+    return TestClient(build_app(spec, store)), store
 
 
 def test_nested_detail_uses_every_path_param_as_identity() -> None:
@@ -442,7 +435,7 @@ def make_inverted_bounds_spec() -> dict[str, Any]:
 
 
 def test_build_app_survives_inverted_numeric_bounds() -> None:
-    client = TestClient(build_app(make_inverted_bounds_spec(), quiet=True))
+    client = TestClient(build_app(make_inverted_bounds_spec()))
 
     response = client.get("/values")
 
@@ -479,17 +472,15 @@ def make_markup_spec() -> dict[str, Any]:
     }
 
 
-def test_spec_text_with_rich_markup_still_serves_requests(
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    client = TestClient(build_app(make_markup_spec(), quiet=False))
+def test_spec_text_with_rich_markup_still_serves_requests() -> None:
+    messages: list[str] = []
+    client = TestClient(build_app(make_markup_spec(), warn=messages.append))
 
     response = client.get("/items")
-    out = capfd.readouterr().out
 
     assert response.status_code == 200
-    assert "unsupported type" in out
-    assert "[/]" in out
+    assert any("unsupported type" in message for message in messages)
+    assert any("[/]" in message for message in messages)
 
 
 def make_status_spec() -> dict[str, Any]:
@@ -537,7 +528,7 @@ def make_status_spec() -> dict[str, Any]:
 def test_invalid_request_body_returns_client_error(
     raw: bytes, content_type: str, expected: int
 ) -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.post("/jobs", content=raw, headers={"content-type": content_type})
 
@@ -545,7 +536,7 @@ def test_invalid_request_body_returns_client_error(
 
 
 def test_oversized_request_body_returns_413() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
     raw = b'{"name": "' + b"x" * 1_048_576 + b'"}'
 
     response = client.post("/jobs", content=raw, headers={"content-type": "application/json"})
@@ -554,7 +545,7 @@ def test_oversized_request_body_returns_413() -> None:
 
 
 def test_non_ascii_declared_content_length_is_not_a_server_error() -> None:
-    app = build_app(make_status_spec(), quiet=True)
+    app = build_app(make_status_spec())
     scope = {
         "type": "http",
         "asgi": {"version": "3.0", "spec_version": "2.3"},
@@ -588,19 +579,19 @@ def test_non_ascii_declared_content_length_is_not_a_server_error() -> None:
 
 
 def test_post_answers_the_status_declared_by_the_operation() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     assert client.post("/jobs", json={"name": "job"}).status_code == 202
 
 
 def test_put_answers_the_status_declared_by_the_operation() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     assert client.put("/jobs/2", json={"name": "renamed"}).status_code == 202
 
 
 def test_delete_with_declared_204_has_no_body() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.delete("/jobs/2")
 
@@ -609,7 +600,7 @@ def test_delete_with_declared_204_has_no_body() -> None:
 
 
 def test_post_with_declared_204_has_no_body() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.post("/pings", json={"name": "ping"})
 
@@ -618,7 +609,7 @@ def test_post_with_declared_204_has_no_body() -> None:
 
 
 def test_get_collection_with_declared_204_has_no_body() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.get("/telemetry")
 
@@ -627,7 +618,7 @@ def test_get_collection_with_declared_204_has_no_body() -> None:
 
 
 def test_patch_answers_the_status_declared_by_the_operation() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.patch("/jobs/2", json={"name": "patched"})
 
@@ -635,7 +626,7 @@ def test_patch_answers_the_status_declared_by_the_operation() -> None:
 
 
 def test_delete_with_declared_200_returns_the_addressed_key() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.delete("/tasks/2")
 
@@ -644,7 +635,7 @@ def test_delete_with_declared_200_returns_the_addressed_key() -> None:
 
 
 def test_request_without_a_content_type_header_answers_400() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.post("/jobs", content=b"{not json")
 
@@ -675,7 +666,7 @@ def test_nested_get_without_a_response_schema_answers_404() -> None:
     member = {"type": "object", "properties": {"name": {"type": "string"}}}
     alice = store.first_or_create("orgs/{org_id}/members", "orgA/alice", member)
     store.first_or_create("orgs/{org_id}/members", "orgA/bob", member)
-    client = TestClient(build_app(spec, store, quiet=True))
+    client = TestClient(build_app(spec, store))
 
     served = client.get("/orgs/orgA/members/alice")
     missing = client.get("/orgs/orgB/members/alice")
@@ -703,7 +694,7 @@ def make_schemaless_collection_spec() -> dict[str, Any]:
 
 
 def test_schemaless_collection_get_returns_every_stored_item() -> None:
-    client = TestClient(build_app(make_schemaless_collection_spec(), quiet=True))
+    client = TestClient(build_app(make_schemaless_collection_spec()))
     client.post("/telemetry", json={"name": "first"})
     client.post("/telemetry", json={"name": "second"})
 
@@ -747,7 +738,7 @@ def make_204_list_spec() -> dict[str, Any]:
 
 
 def test_list_route_with_declared_204_has_no_body() -> None:
-    client = TestClient(build_app(make_204_list_spec(), quiet=True))
+    client = TestClient(build_app(make_204_list_spec()))
 
     response = client.get("/metrics")
 
@@ -758,7 +749,7 @@ def test_list_route_with_declared_204_has_no_body() -> None:
 # httpx hands the header value to the ASGI scope unstripped, so the whitespace
 # reaches _json_object through the client as well as through a real parser.
 def test_content_type_padded_with_whitespace_is_read_as_json() -> None:
-    client = TestClient(build_app(make_status_spec(), quiet=True))
+    client = TestClient(build_app(make_status_spec()))
 
     response = client.post(
         "/jobs", content=b'{"name": "job"}', headers={"content-type": "  application/json  "}
@@ -854,7 +845,7 @@ class FalseyStore(StubStore):
 def test_build_app_honours_an_injected_store() -> None:
     store = StubStore()
 
-    body = TestClient(build_app(make_store_spec(), store, quiet=True)).get("/items").json()
+    body = TestClient(build_app(make_store_spec(), store)).get("/items").json()
 
     assert [item["id"] for item in body] == ["injected-0", "injected-1", "injected-2"]
     assert store.ensured == ["items"]
@@ -863,7 +854,7 @@ def test_build_app_honours_an_injected_store() -> None:
 def test_build_app_keeps_a_falsey_injected_store() -> None:
     store = FalseyStore()
 
-    body = TestClient(build_app(make_store_spec(), store, quiet=True)).get("/items").json()
+    body = TestClient(build_app(make_store_spec(), store)).get("/items").json()
 
     assert [item["id"] for item in body] == ["injected-0", "injected-1", "injected-2"]
 
@@ -882,6 +873,6 @@ def test_stub_store_satisfies_the_store_protocol() -> None:
 
 
 def test_build_app_accepts_a_read_only_spec() -> None:
-    app = build_app(MappingProxyType(make_store_spec()), quiet=True)
+    app = build_app(MappingProxyType(make_store_spec()))
 
     assert TestClient(app).get("/items").status_code == 200
