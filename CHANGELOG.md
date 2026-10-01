@@ -55,4 +55,4 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - Public functions accept `Mapping` instead of `dict`, so a read-only mapping
   can be passed.
 - A generated item is narrowed to an object once, in the generator
-  (`generate_object`), instead of twice in `store` and `server`.
+  (`generate_object`), instead of at the two call sites in `store`.
