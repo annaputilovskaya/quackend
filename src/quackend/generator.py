@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
 from faker import Faker
@@ -34,7 +34,7 @@ _FORMAT_PRODUCERS: dict[str, Callable[[Faker], str]] = {
 
 
 def generate_value(
-    schema: dict[str, Any],
+    schema: Mapping[str, Any],
     fake: Faker,
     depth: int = 0,
     warn: Callable[[str], None] | None = None,
@@ -58,11 +58,11 @@ def generate_value(
     if "oneOf" in schema or "anyOf" in schema:
         branches: list[dict[str, Any]] = schema.get("oneOf") or schema.get("anyOf") or []
         if not branches:
-            if warn:
+            if warn is not None:
                 warn("empty oneOf/anyOf, returning null")
             return None
         branch = next((b for b in branches if b.get("example") is not None), branches[0])
-        if warn:
+        if warn is not None:
             warn("used first branch of oneOf/anyOf")
         return generate_value(branch, fake, depth + 1, warn)
     if "allOf" in schema:
@@ -81,7 +81,7 @@ def generate_value(
         return generate_value(merged, fake, depth + 1, warn)
     schema_type = schema.get("type")
     if not schema_type:
-        if warn:
+        if warn is not None:
             warn("missing type, returning null")
         return None
     if schema_type == "object":
@@ -98,13 +98,32 @@ def generate_value(
         return fake.boolean()
     if schema_type == "string":
         return _string_value(schema, fake)
-    if warn:
+    if warn is not None:
         warn(f"unsupported type {schema_type!r}, returning null")
     return None
 
 
+def generate_object(
+    schema: Mapping[str, Any],
+    fake: Faker,
+    warn: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Generate a JSON-Schema object, wrapping scalar schemas in a value field.
+
+    Args:
+        schema: a JSON Schema fragment expected to describe an object.
+        fake: a Faker instance used to produce values.
+        warn: an optional callback receiving fail-soft messages.
+
+    Returns:
+        A generated object; scalar schemas are wrapped as ``{"value": <scalar>}``.
+    """
+    value = generate_value(schema, fake, warn=warn)
+    return value if isinstance(value, dict) else {"value": value}
+
+
 def _object_value(
-    schema: dict[str, Any],
+    schema: Mapping[str, Any],
     fake: Faker,
     depth: int,
     warn: Callable[[str], None] | None,
@@ -137,7 +156,7 @@ def _jsonable(value: Any, warn: Callable[[str], None] | None = None) -> Any:
         return {str(name): _jsonable(item, warn) for name, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(item, warn) for item in value]
-    if warn:
+    if warn is not None:
         warn(f"spec value of type {type(value).__name__} is not JSON, coerced to str")
     return str(value)
 
@@ -176,13 +195,13 @@ def _ordered_bounds(
         high = low + default_high
     if low > high:
         low, high = high, low
-        if warn:
+        if warn is not None:
             warn(f"inverted {what} bounds, swapped to {low:g}..{high:g}")
     return low, high
 
 
 def _integer_value(
-    schema: dict[str, Any],
+    schema: Mapping[str, Any],
     fake: Faker,
     warn: Callable[[str], None] | None = None,
 ) -> int:
@@ -197,7 +216,7 @@ def _integer_value(
 
 
 def _number_value(
-    schema: dict[str, Any],
+    schema: Mapping[str, Any],
     fake: Faker,
     warn: Callable[[str], None] | None = None,
 ) -> float:
@@ -208,7 +227,7 @@ def _number_value(
     return value
 
 
-def _string_value(schema: dict[str, Any], fake: Faker) -> str:
+def _string_value(schema: Mapping[str, Any], fake: Faker) -> str:
     format_name: str | None = schema.get("format")
     producer = _FORMAT_PRODUCERS.get(format_name) if format_name is not None else None
     if producer:
@@ -238,7 +257,7 @@ def _is_numeric_pattern(pattern: str) -> bool:
     return bool(regex.fullmatch("0") and regex.fullmatch("1.25") and not regex.fullmatch("abc"))
 
 
-def _numeric_string_value(schema: dict[str, Any], fake: Faker) -> str:
+def _numeric_string_value(schema: Mapping[str, Any], fake: Faker) -> str:
     low = float(schema.get("minimum", 0))
     high = float(schema.get("maximum", 100))
     raw = fake.random.uniform(low, high)

@@ -1,12 +1,13 @@
 import datetime
 import json
 import re
+from types import MappingProxyType
 from typing import Any
 
 import pytest
 from faker import Faker
 
-from quackend.generator import generate_value
+from quackend.generator import generate_object, generate_value
 
 
 @pytest.fixture()
@@ -249,3 +250,58 @@ def test_generate_value_integer_with_huge_minimum_is_exact(fake: Faker) -> None:
 
     for _ in range(20):
         assert generate_value(schema, fake) >= huge
+
+
+def test_generate_object_returns_a_generated_object(fake: Faker) -> None:
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+    }
+
+    value = generate_object(schema, fake)
+
+    assert set(value) == {"name", "age"}
+    assert isinstance(value["name"], str)
+    assert isinstance(value["age"], int)
+
+
+def test_generate_object_wraps_a_scalar_schema_in_a_value_field(fake: Faker) -> None:
+    value = generate_object({"type": "string"}, fake)
+
+    assert list(value) == ["value"]
+    assert isinstance(value["value"], str)
+
+
+def test_generate_object_wraps_a_schema_without_a_type_in_a_value_field(fake: Faker) -> None:
+    value = generate_object({}, fake)
+
+    assert value == {"value": None}
+
+
+def test_generate_object_accepts_a_read_only_mapping(fake: Faker) -> None:
+    schema = MappingProxyType({"type": "object", "properties": {"name": {"type": "string"}}})
+
+    value = generate_object(schema, fake)
+
+    assert isinstance(value["name"], str)
+
+
+def test_generate_value_accepts_a_read_only_object_mapping(fake: Faker) -> None:
+    schema = MappingProxyType(
+        {"type": "object", "properties": {"name": MappingProxyType({"type": "string"})}}
+    )
+
+    value = generate_value(schema, fake)
+
+    assert isinstance(value["name"], str)
+
+
+def test_generate_value_accepts_a_read_only_array_mapping(fake: Faker) -> None:
+    schema = MappingProxyType(
+        {"type": "array", "items": MappingProxyType({"type": "integer", "minimum": 1})}
+    )
+
+    values = generate_value(schema, fake)
+
+    assert 1 <= len(values) <= 5
+    assert all(isinstance(value, int) and value >= 1 for value in values)
