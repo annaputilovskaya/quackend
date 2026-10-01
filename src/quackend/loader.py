@@ -75,7 +75,7 @@ class Operation:
     resource: str
     params: tuple[str, ...]
     ok_status: int
-    item_schema: dict[str, Any] | None
+    item_schema: Mapping[str, Any] | None
     is_list: bool
 
 
@@ -95,7 +95,7 @@ def parse_route(path_template: str) -> Route:
     )
 
 
-def _item_schema(schema: dict[str, Any]) -> dict[str, Any]:
+def _item_schema(schema: Mapping[str, Any]) -> Mapping[str, Any]:
     items = schema.get("items")
     if schema.get("type") == "array" and isinstance(items, dict):
         return items
