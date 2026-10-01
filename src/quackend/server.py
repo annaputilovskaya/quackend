@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.markup import escape as escape_markup
 
 from quackend.loader import Operation, iter_operations
-from quackend.store import QuackStore
+from quackend.store import QuackStore, StoreProtocol
 
 _CONSOLE = Console()
 _MAX_BODY_BYTES = 1_048_576
@@ -82,7 +82,7 @@ async def _json_object(request: Request) -> dict[str, Any]:
 
 def _seed_resources(
     operations: Sequence[Operation],
-    store: QuackStore,
+    store: StoreProtocol,
     warn: Callable[[str], None],
 ) -> None:
     for operation in operations:
@@ -92,7 +92,7 @@ def _seed_resources(
 
 async def _handle_get(
     operation: Operation,
-    store: QuackStore,
+    store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
@@ -121,7 +121,7 @@ async def _handle_get(
 
 async def _handle_post(
     operation: Operation,
-    store: QuackStore,
+    store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
@@ -133,7 +133,7 @@ async def _handle_post(
 
 async def _handle_update(
     operation: Operation,
-    store: QuackStore,
+    store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
@@ -146,7 +146,7 @@ async def _handle_update(
 
 async def _handle_delete(
     operation: Operation,
-    store: QuackStore,
+    store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
@@ -156,7 +156,7 @@ async def _handle_delete(
     return _ok_response({"deleted": key}, operation.ok_status)
 
 
-_Handler = Callable[[Operation, QuackStore, Request, Callable[[str], None]], Awaitable[Response]]
+_Handler = Callable[[Operation, StoreProtocol, Request, Callable[[str], None]], Awaitable[Response]]
 
 _VERBS: dict[str, _Handler] = {
     "get": _handle_get,
@@ -170,7 +170,7 @@ _VERBS: dict[str, _Handler] = {
 def _endpoint(
     handler: _Handler,
     operation: Operation,
-    store: QuackStore,
+    store: StoreProtocol,
     warn: Callable[[str], None],
 ) -> Callable[[Request], Awaitable[Response]]:
     async def _view(request: Request) -> Response:
@@ -180,8 +180,8 @@ def _endpoint(
 
 
 def build_app(
-    spec: dict[str, Any],
-    store: QuackStore | None = None,
+    spec: Mapping[str, Any],
+    store: StoreProtocol | None = None,
     *,
     latency_ms: int = 0,
     fail_rate: float = 0.0,
@@ -199,7 +199,7 @@ def build_app(
     Returns:
         A configured FastAPI application.
     """
-    resolved_store = store or QuackStore()
+    resolved_store = store if store is not None else QuackStore()
 
     def warn(message: str) -> None:
         if not quiet:

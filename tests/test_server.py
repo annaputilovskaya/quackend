@@ -1,8 +1,9 @@
 import asyncio
 import copy
 import time
-from collections.abc import MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from quackend.loader import load_openapi
 from quackend.server import build_app
-from quackend.store import QuackStore
+from quackend.store import QuackStore, StoreProtocol
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -765,3 +766,122 @@ def test_content_type_padded_with_whitespace_is_read_as_json() -> None:
 
     assert response.status_code == 202
     assert response.json()["name"] == "job"
+
+
+def make_store_spec() -> dict[str, Any]:
+    return {
+        "info": {"title": "Stub"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {"type": "object", "properties": {}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+class StubStore:
+    """A store adapter whose items are recognisable, to prove the seam is honoured."""
+
+    def __init__(self) -> None:
+        self.seeded: list[int | None] = []
+        self.ensured: list[str] = []
+
+    def set_seed(self, seed: int | None) -> None:
+        self.seeded.append(seed)
+
+    def ensure(
+        self,
+        resource: str,
+        schema: Mapping[str, Any],
+        warn: Callable[[str], None] | None = None,
+    ) -> None:
+        self.ensured.append(resource)
+
+    def get(self, resource: str, key: str) -> dict[str, Any] | None:
+        return None
+
+    def first(self, resource: str) -> dict[str, Any] | None:
+        return {"id": "injected-0"}
+
+    def get_all(self, resource: str) -> list[dict[str, Any]]:
+        return [{"id": f"injected-{index}"} for index in range(3)]
+
+    def first_or_create(
+        self,
+        resource: str,
+        key: str,
+        schema: Mapping[str, Any],
+        warn: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
+        return {"id": "injected-0"}
+
+    def create(self, resource: str, data: Mapping[str, Any]) -> dict[str, Any]:
+        return {"id": "injected-0"}
+
+    def update(
+        self,
+        resource: str,
+        key: str,
+        data: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        return {"id": "injected-0"}
+
+    def delete(self, resource: str, key: str) -> bool:
+        return True
+
+
+class FalseyStore(StubStore):
+    """An adapter that claims to be empty, so truthiness would drop it."""
+
+    def __bool__(self) -> bool:
+        return False
+
+
+def test_build_app_honours_an_injected_store() -> None:
+    store = StubStore()
+
+    body = TestClient(build_app(make_store_spec(), store, quiet=True)).get("/items").json()
+
+    assert [item["id"] for item in body] == ["injected-0", "injected-1", "injected-2"]
+    assert store.ensured == ["items"]
+
+
+def test_build_app_keeps_a_falsey_injected_store() -> None:
+    store = FalseyStore()
+
+    body = TestClient(build_app(make_store_spec(), store, quiet=True)).get("/items").json()
+
+    assert [item["id"] for item in body] == ["injected-0", "injected-1", "injected-2"]
+
+
+def test_stub_store_satisfies_the_store_protocol() -> None:
+    store: StoreProtocol = StubStore()
+
+    store.set_seed(1)
+    store.ensure("items", {})
+
+    assert store.get_all("items") == [
+        {"id": "injected-0"},
+        {"id": "injected-1"},
+        {"id": "injected-2"},
+    ]
+
+
+def test_build_app_accepts_a_read_only_spec() -> None:
+    app = build_app(MappingProxyType(make_store_spec()), quiet=True)
+
+    assert TestClient(app).get("/items").status_code == 200
