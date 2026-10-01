@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import prance
 
-__all__ = ["iter_operations", "load_openapi", "operation_response_schema", "path_resource"]
+__all__ = [
+    "Operation",
+    "Route",
+    "iter_operations",
+    "load_openapi",
+    "operation_response_schema",
+    "path_resource",
+]
+
+_PARAM_PATTERN = re.compile(r"\{(\w+)\}")
+_METHODS: tuple[str, ...] = ("get", "post", "put", "delete", "patch")
 
 
 def load_openapi(source: str | Path) -> dict[str, Any]:
@@ -45,20 +57,88 @@ def path_resource(path_template: str) -> str:
     return "/".join(segments) or path_template.strip("/")
 
 
-def iter_operations(spec: Mapping[str, Any]) -> Iterator[tuple[str, str, dict[str, Any]]]:
-    """Yield every operation declared in a spec.
+@dataclass(frozen=True, slots=True)
+class Route:
+    """A path template split into its collection key and ordered parameters."""
+
+    path: str
+    resource: str
+    params: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Operation:
+    """A single OpenAPI operation with everything a mock route needs."""
+
+    path: str
+    method: str
+    resource: str
+    params: tuple[str, ...]
+    ok_status: int
+    item_schema: Mapping[str, Any] | None
+    is_list: bool
+
+
+def parse_route(path_template: str) -> Route:
+    """Split a path template into its collection key and path parameters.
+
+    Args:
+        path_template: an OpenAPI path template such as "/orgs/{org_id}/members".
+
+    Returns:
+        The route with the store resource and the ordered parameter names.
+    """
+    return Route(
+        path=path_template,
+        resource=path_resource(path_template),
+        params=tuple(_PARAM_PATTERN.findall(path_template)),
+    )
+
+
+def _item_schema(schema: Mapping[str, Any]) -> Mapping[str, Any]:
+    items = schema.get("items")
+    if schema.get("type") == "array" and isinstance(items, dict):
+        return items
+    return schema
+
+
+def _first_success_status(operation: Mapping[str, Any]) -> int:
+    for raw_status in sorted(operation.get("responses") or {}):
+        try:
+            code = int(raw_status)
+        except (TypeError, ValueError):
+            continue
+        if 200 <= code < 300:
+            return code
+    return 200
+
+
+def iter_operations(spec: Mapping[str, Any]) -> Iterator[Operation]:
+    """Yield every supported operation declared in a spec, fully resolved.
 
     Args:
         spec: a resolved OpenAPI spec.
 
     Yields:
-        Tuples of path template, lowercase HTTP method and operation object.
+        One Operation per declared method, with its resource, path parameters,
+        declared success status, item schema and list flag already resolved.
     """
     for path_template, path_item in (spec.get("paths") or {}).items():
-        for method in ("get", "post", "put", "delete", "patch"):
+        for method in _METHODS:
             operation = path_item.get(method)
-            if operation:
-                yield path_template, method, operation
+            if not operation:
+                continue
+            route = parse_route(path_template)
+            schema = operation_response_schema(operation)
+            yield Operation(
+                path=route.path,
+                method=method,
+                resource=route.resource,
+                params=route.params,
+                ok_status=_first_success_status(operation),
+                item_schema=_item_schema(schema) if schema else None,
+                is_list=schema is not None and schema.get("type") == "array",
+            )
 
 
 def _json_media(content: Mapping[str, Any]) -> Mapping[str, Any] | None:

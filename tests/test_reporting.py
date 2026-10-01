@@ -7,6 +7,7 @@ import rich
 import rich.table
 from rich.console import Console
 
+from quackend import reporting
 from quackend.reporting import render_route_table
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -46,7 +47,7 @@ def test_route_table_renders_ordinary_paths_and_keeps_column_style(
     # would drop the colour the Method column is supposed to keep.
     buffer = StringIO()
     console = Console(file=buffer, force_terminal=True, color_system="standard", width=120)
-    monkeypatch.setattr(rich, "get_console", lambda: console)
+    monkeypatch.setattr(reporting, "console", console)
 
     # box=None is the test's own choice rather than Rich's default: with a box the
     # cells are separated by a glyph of Rich's choosing, and every assertion below

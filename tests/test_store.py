@@ -1,6 +1,9 @@
-import pytest
+from types import MappingProxyType
 
-from quackend.store import COLLECTION_SIZE, QuackStore
+import pytest
+from faker import Faker
+
+from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
 
 USER_SCHEMA = {
     "type": "object",
@@ -136,3 +139,103 @@ def test_create_ignores_client_supplied_id(store: QuackStore) -> None:
 
     assert created["id"] == str(COLLECTION_SIZE + 1)
     assert store.get("users", created["id"]) == created
+
+
+class _FalsyFaker(Faker):
+    """A fully working Faker that claims to be empty."""
+
+    def __bool__(self) -> bool:
+        return False
+
+
+class _FalsyWarn:
+    """A working warn callback that claims to be empty."""
+
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def __call__(self, message: str) -> None:
+        self.messages.append(message)
+
+    def __bool__(self) -> bool:
+        return False
+
+
+def test_quack_store_satisfies_the_store_protocol() -> None:
+    store: StoreProtocol = QuackStore()
+
+    store.set_seed(7)
+    store.ensure("users", USER_SCHEMA)
+
+    assert len(store.get_all("users")) == COLLECTION_SIZE
+
+
+def test_ensure_accepts_a_read_only_schema() -> None:
+    store = QuackStore()
+
+    store.ensure("users", MappingProxyType(USER_SCHEMA))
+
+    item = store.first("users")
+    assert item is not None
+    assert isinstance(item["name"], str)
+
+
+def test_first_or_create_accepts_a_read_only_schema() -> None:
+    store = QuackStore()
+
+    created = store.first_or_create("users", "1", MappingProxyType(USER_SCHEMA))
+
+    assert created["id"] == "1"
+    assert isinstance(created["name"], str)
+
+
+def test_create_accepts_a_read_only_payload() -> None:
+    store = QuackStore()
+
+    created = store.create("users", MappingProxyType({"name": "Bob"}))
+
+    assert created == {"name": "Bob", "id": "1"}
+    assert store.get("users", "1") == created
+
+
+def test_update_accepts_a_read_only_payload() -> None:
+    store = QuackStore()
+    store.ensure("users", USER_SCHEMA)
+
+    updated = store.update("users", "1", MappingProxyType({"name": "Bob"}))
+
+    assert updated is not None
+    assert updated["name"] == "Bob"
+    assert updated["id"] == "1"
+
+
+def test_ensure_keeps_a_falsey_faker_instance() -> None:
+    fake = _FalsyFaker()
+    fake.seed_instance(42)
+    store = QuackStore(fake)
+    store.ensure("users", USER_SCHEMA)
+
+    control_fake = Faker()
+    control_fake.seed_instance(42)
+    control = QuackStore(control_fake)
+    control.ensure("users", USER_SCHEMA)
+
+    assert store.get_all("users") == control.get_all("users")
+
+
+def test_ensure_keeps_a_falsey_warn_callback() -> None:
+    warn = _FalsyWarn()
+    store = QuackStore()
+
+    store.ensure("users", {}, warn=warn)
+
+    assert any(message.startswith("users: missing type") for message in warn.messages)
+
+
+def test_ensure_wraps_a_scalar_item_in_a_value_field() -> None:
+    store = QuackStore()
+
+    store.ensure("tags", {"type": "string", "enum": ["a"]})
+
+    item = store.first("tags")
+    assert item == {"value": "a", "id": "1"}

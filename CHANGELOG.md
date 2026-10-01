@@ -17,6 +17,11 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - CI runs the whole Definition of Done on every push and pull request, on Linux
   and Windows, on Python 3.10 and 3.13, and validates the built distributions
   with `twine check --strict`.
+- `loader` yields a resolved `Operation` record instead of a `(path, method,
+  operation)` tuple, and exports `Route` next to it.
+- `store` exports `StoreProtocol`, the contract `build_app` depends on: any
+  adapter can be injected, and an adapter that is empty is no longer silently
+  replaced by `QuackStore`.
 
 ### Fixed
 
@@ -43,3 +48,11 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 - `mypy` checks `tests/` as strictly as `src/`, and the `tests.*` override that
   the old gate never executed is gone.
+- `build_app` takes a `warn` callback instead of a `quiet` flag. **Breaking**:
+  the library prints nothing of its own, so `quiet=True` becomes `warn=None`
+  and `quiet=False` becomes `warn=<callable>`; the CLI decides how a warning
+  reaches the terminal, and the whole application shares one Rich console.
+- Public functions accept `Mapping` instead of `dict`, so a read-only mapping
+  can be passed.
+- A generated item is narrowed to an object once, in the generator
+  (`generate_object`), instead of at the two call sites in `store`.
