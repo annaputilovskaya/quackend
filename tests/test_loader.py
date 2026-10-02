@@ -5,11 +5,14 @@ import pytest
 
 from quackend.loader import (
     Route,
+    is_templated,
     iter_operations,
+    iter_success_responses,
     load_openapi,
     operation_response_schema,
     parse_route,
     path_resource,
+    resolve_resource,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -197,3 +200,103 @@ def test_iter_operations_skips_methods_a_spec_does_not_declare() -> None:
     methods = [op.method for op in iter_operations(spec)]
 
     assert methods == ["get"]
+
+
+def test_iter_success_responses_yields_the_range_key_as_its_lower_bound() -> None:
+    # Key order, not numeric order: "2XX" sorts after "204", so an explicit status
+    # is read before the range that would otherwise swallow it.
+    operation = {
+        "responses": {
+            "2XX": {"description": "any success"},
+            "204": {"description": "no content"},
+            "4XX": {"description": "any client error"},
+            "default": {"description": "anything"},
+        }
+    }
+
+    pairs = list(iter_success_responses(operation))
+
+    assert pairs == [
+        (204, {"description": "no content"}),
+        (200, {"description": "any success"}),
+    ]
+
+
+def test_operation_response_schema_range_only_returns_the_schema() -> None:
+    operation = {
+        "responses": {
+            "2XX": {
+                "description": "ok",
+                "content": {"application/json": {"schema": {"type": "object"}}},
+            }
+        }
+    }
+
+    schema = operation_response_schema(operation)
+
+    assert schema is not None
+    assert schema["type"] == "object"
+
+
+def test_iter_operations_range_only_reports_200_and_a_list() -> None:
+    spec = {
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "2XX": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"type": "array", "items": {"type": "object"}}
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    operation = next(iter_operations(spec))
+
+    assert operation.ok_status == 200
+    assert operation.is_list is True
+    assert operation.item_schema == {"type": "object"}
+
+
+def test_is_templated_reports_a_resource_that_still_holds_a_parameter() -> None:
+    assert is_templated("monitors/{monitor_id}/uptime") is True
+    assert is_templated("monitors/xyz/uptime") is False
+
+
+def test_resolve_resource_substitutes_only_the_supplied_parameters() -> None:
+    route = parse_route("/orgs/{org_id}/members/{member_id}")
+    nested = parse_route("/monitors/{monitor_id}/uptime")
+
+    resolved = resolve_resource(route, {"org_id": "orgA", "member_id": "alice"})
+    bound = resolve_resource(nested, {"monitor_id": "xyz"})
+    partial = resolve_resource(nested, {})
+
+    assert resolved == "orgs/orgA/members"
+    assert bound == "monitors/xyz/uptime"
+    # A parameter the request does not supply stays literal, so an unresolved key
+    # is still recognisable as a template instead of silently losing a segment.
+    assert partial == "monitors/{monitor_id}/uptime"
+
+
+def test_iter_operations_yields_every_verb_the_path_declares() -> None:
+    spec = {
+        "paths": {
+            "/items": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "head": {"responses": {"200": {"description": "ok"}}},
+                "options": {"responses": {"204": {"description": "no content"}}},
+                "trace": {"responses": {"200": {"description": "ok"}}},
+            }
+        }
+    }
+
+    methods = [op.method for op in iter_operations(spec)]
+
+    assert methods == ["get", "head", "options", "trace"]

@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from quackend.loader import load_openapi
+from quackend.loader import UnsupportedOperationError, load_openapi
 from quackend.server import build_app
-from quackend.store import QuackStore, StoreProtocol
+from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -394,9 +394,9 @@ def test_nested_delete_removes_the_addressed_member() -> None:
     client, store = make_nested_resources_client()
     client.get("/orgs/orgA/members/alice")
 
-    assert store.get("orgs/{org_id}/members", "orgA/alice") is not None
+    assert store.get("orgs/orgA/members", "orgA/alice") is not None
     assert client.delete("/orgs/orgA/members/alice").status_code == 200
-    assert store.get("orgs/{org_id}/members", "orgA/alice") is None
+    assert store.get("orgs/orgA/members", "orgA/alice") is None
 
 
 def make_inverted_bounds_spec() -> dict[str, Any]:
@@ -664,8 +664,8 @@ def test_nested_get_without_a_response_schema_answers_404() -> None:
     spec = make_schemaless_nested_spec()
     store = QuackStore()
     member = {"type": "object", "properties": {"name": {"type": "string"}}}
-    alice = store.first_or_create("orgs/{org_id}/members", "orgA/alice", member)
-    store.first_or_create("orgs/{org_id}/members", "orgA/bob", member)
+    alice = store.first_or_create("orgs/orgA/members", "orgA/alice", member)
+    store.first_or_create("orgs/orgA/members", "orgA/bob", member)
     client = TestClient(build_app(spec, store))
 
     served = client.get("/orgs/orgA/members/alice")
@@ -876,3 +876,152 @@ def test_build_app_accepts_a_read_only_spec() -> None:
     app = build_app(MappingProxyType(make_store_spec()))
 
     assert TestClient(app).get("/items").status_code == 200
+
+
+# The wildcard is the only success the operation declares, so it decides both the
+# status and the schema: reading it as "no schema" would mock an empty list.
+def make_range_only_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "range", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "2XX": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"name": {"type": "string"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_range_only_response_serves_the_declared_array() -> None:
+    client = TestClient(build_app(make_range_only_spec()))
+
+    body = client.get("/items").json()
+
+    assert len(body) == COLLECTION_SIZE
+    assert all(isinstance(item["name"], str) for item in body)
+
+
+def test_nested_collection_is_stored_per_concrete_parent() -> None:
+    client, store = make_nested_client()
+
+    client.get("/api/v1/upcheck/monitors/xyz/uptime")
+    client.get("/api/v1/upcheck/monitors/other/uptime")
+
+    assert len(store.get_all("api/v1/upcheck/monitors/xyz/uptime")) == COLLECTION_SIZE
+    assert len(store.get_all("api/v1/upcheck/monitors/other/uptime")) == COLLECTION_SIZE
+    # The templated key is never created: nested.yaml declares no verb here that
+    # deletes, so a get_all on it is enough to show it stays empty forever.
+    assert store.get_all("api/v1/upcheck/monitors/{monitor_id}/uptime") == []
+
+
+def test_nested_detail_is_stored_under_the_parent_the_request_names() -> None:
+    client, store = make_nested_resources_client()
+
+    alice = client.get("/orgs/orgA/members/alice").json()
+
+    assert alice["id"] == "orgA/alice"
+    assert store.get("orgs/orgA/members", "orgA/alice") == alice
+
+
+def test_nested_delete_removes_the_member_of_the_addressed_parent_only() -> None:
+    client, store = make_nested_resources_client()
+    client.get("/orgs/orgA/members/alice")
+    client.get("/orgs/orgB/members/alice")
+
+    assert client.delete("/orgs/orgA/members/alice").status_code == 200
+
+    assert store.get("orgs/orgA/members", "orgA/alice") is None
+    assert store.get("orgs/orgB/members", "orgB/alice") is not None
+
+
+def make_head_only_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "head", "version": "1.0.0"},
+        "paths": {
+            "/probe": {
+                "head": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"name": {"type": "string"}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_declared_head_answers_its_own_status_with_no_body() -> None:
+    # No declared GET on this path: the HEAD operation is answered on its own, so
+    # the mock serves what the spec declares rather than implying a GET.
+    client = TestClient(build_app(make_head_only_spec()))
+
+    response = client.head("/probe")
+
+    assert response.status_code == 200
+    assert response.content == b""
+    assert response.headers["content-type"] == "application/json"
+
+
+def make_options_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "options", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "options": {"responses": {"204": {"description": "no content"}}},
+            }
+        },
+    }
+
+
+def test_declared_options_answers_allow_for_the_path() -> None:
+    client = TestClient(build_app(make_options_spec()))
+
+    response = client.options("/items")
+
+    assert response.status_code == 204
+    assert response.headers["allow"] == "GET, OPTIONS"
+
+
+def make_trace_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "trace", "version": "1.0.0"},
+        "paths": {"/items": {"trace": {"responses": {"200": {"description": "ok"}}}}},
+    }
+
+
+def test_declared_trace_refuses_to_build() -> None:
+    with pytest.raises(UnsupportedOperationError) as raised:
+        build_app(make_trace_spec())
+
+    assert "TRACE" in str(raised.value)
+    assert "/items" in str(raised.value)

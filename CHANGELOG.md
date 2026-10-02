@@ -25,6 +25,12 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Fixed
 
+- An operation whose only success response is the `2XX` range serves generated
+  data for its declared schema instead of `[]`, and both the status and the
+  schema are now read through one parser, so they can no longer disagree.
+  **Breaking**: such an operation now answers a body where it used to answer an
+  empty list. An operation with no 2xx response and no schema still mocks `[]`;
+  that part is unchanged.
 - `store.create` derives `id` from the storage key, so `POST` and `GET` of the
   same resource always address the same object. **Breaking**: an `id` sent by a
   client in a `POST` body is ignored.
@@ -34,6 +40,13 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - Nested resources are keyed by every path parameter, so
   `/orgs/{org_id}/members/{member_id}` no longer addresses the same member for
   every parent.
+- A collection nested under a path parameter belongs to the parent the request
+  names, so `/monitors/m1/uptime` and `/monitors/m2/uptime` are two collections
+  instead of one shared bucket. **Breaking**: the store key holds the bound
+  parent (`api/v1/upcheck/monitors/xyz/uptime`), so a hand-written
+  `QuackStore` consumer that looks up `orgs/{org_id}/members` directly sees
+  nothing and has to resolve the parent first; such a collection is created on
+  the first request instead of at startup.
 - Inverted numeric bounds (`minimum` above `maximum`) are swapped and reported
   as a warning instead of raising `ValueError` while the server starts.
 - Spec text that looks like Rich markup is escaped before it reaches the
@@ -46,6 +59,16 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- Rendering a route table is pure: `render_route_table` returns the table and
+  `quackend routes` and `quackend start` print it, so nothing below `cli` writes
+  to a stream. **Breaking**: `quackend.reporting.console` moved to
+  `quackend.cli.console`.
+- A declared `HEAD` is answered with the status and headers of its own declared
+  success and an empty body, and a declared `OPTIONS` answers `204` with an
+  `Allow` header listing the methods the app serves for that path. **Breaking**:
+  a declared `TRACE` now makes `build_app` raise
+  `loader.UnsupportedOperationError` instead of returning an app that answers
+  `405`, and the route table lists `TRACE` too.
 - `mypy` checks `tests/` as strictly as `src/`, and the `tests.*` override that
   the old gate never executed is gone.
 - `build_app` takes a `warn` callback instead of a `quiet` flag. **Breaking**:
