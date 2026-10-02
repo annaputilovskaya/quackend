@@ -70,6 +70,11 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- The generation limits are published as `generator.DEPTH_LIMIT` and
+  `generator.ARRAY_MAX`, and every remaining magic number of the generator
+  carries a name. **Breaking**: `generate_value` no longer takes `depth`, so a
+  caller can no longer start the recursion below the top of a schema and skip the
+  depth guard; `warn` is its third parameter now.
 - Rendering a route table is pure: `render_route_table` returns the table and
   `quackend routes` and `quackend start` print it, so nothing below `cli` writes
   to a stream. **Breaking**: `quackend.reporting.console` moved to
