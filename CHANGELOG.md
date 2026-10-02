@@ -59,6 +59,10 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- Rendering a route table is pure: `render_route_table` returns the table and
+  `quackend routes` and `quackend start` print it, so nothing below `cli` writes
+  to a stream. **Breaking**: `quackend.reporting.console` moved to
+  `quackend.cli.console`.
 - A declared `HEAD` is answered with the status and headers of its own declared
   success and an empty body, and a declared `OPTIONS` answers `204` with an
   `Allow` header listing the methods the app serves for that path. **Breaking**:

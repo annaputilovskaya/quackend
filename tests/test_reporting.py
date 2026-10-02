@@ -1,4 +1,5 @@
 import re
+from collections.abc import Mapping
 from io import StringIO
 from typing import Any
 
@@ -7,7 +8,6 @@ import rich
 import rich.table
 from rich.console import Console
 
-from quackend import reporting
 from quackend.reporting import render_route_table
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -23,18 +23,24 @@ def make_spec(*paths: str) -> dict[str, Any]:
     }
 
 
-def test_route_table_renders_closing_markup_tag_path(capfd: pytest.CaptureFixture[str]) -> None:
-    render_route_table(make_spec("/a[/]b"))
-    out = capfd.readouterr().out
+# A terminal-style console writing to a buffer, so the assertions read what a user
+# would see rather than the Table object: Rich drops the colour the Method column
+# is supposed to keep whenever it does not see a terminal.
+def render_to_buffer(spec: Mapping[str, Any]) -> str:
+    buffer = StringIO()
+    console = Console(file=buffer, force_terminal=True, color_system="standard", width=120)
+    console.print(render_route_table(spec))
+    return buffer.getvalue()
+
+
+def test_route_table_renders_closing_markup_tag_path() -> None:
+    out = render_to_buffer(make_spec("/a[/]b"))
 
     assert "/a[/]b" in out
 
 
-def test_route_table_renders_opening_markup_tag_path_verbatim(
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    render_route_table(make_spec("/items/[id]"))
-    out = capfd.readouterr().out
+def test_route_table_renders_opening_markup_tag_path_verbatim() -> None:
+    out = render_to_buffer(make_spec("/items/[id]"))
 
     assert "/items/[id]" in out
 
@@ -42,13 +48,6 @@ def test_route_table_renders_opening_markup_tag_path_verbatim(
 def test_route_table_renders_ordinary_paths_and_keeps_column_style(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A terminal-style console writing to a buffer, so the assertions read the
-    # rendered table rather than the Table object: capfd sees a non-tty and Rich
-    # would drop the colour the Method column is supposed to keep.
-    buffer = StringIO()
-    console = Console(file=buffer, force_terminal=True, color_system="standard", width=120)
-    monkeypatch.setattr(reporting, "console", console)
-
     # box=None is the test's own choice rather than Rich's default: with a box the
     # cells are separated by a glyph of Rich's choosing, and every assertion below
     # would then fail for a reason that has nothing to do with the escaping.
@@ -59,9 +58,9 @@ def test_route_table_renders_ordinary_paths_and_keeps_column_style(
 
     monkeypatch.setattr(rich.table, "Table", BoxlessTable)
 
-    render_route_table(make_spec("/users", "/users/{id}"))
+    rendered = render_to_buffer(make_spec("/users", "/users/{id}"))
 
-    rows = [line for line in buffer.getvalue().splitlines() if "GET" in line]
+    rows = [line for line in rendered.splitlines() if "GET" in line]
 
     assert len(rows) == 2
     for row in rows:
@@ -73,3 +72,9 @@ def test_route_table_renders_ordinary_paths_and_keeps_column_style(
         # match here puts the Method cell and the Path cell that follows it in the
         # same row, in that order.
         assert re.fullmatch(r" *GET +/users(?:/\{id\})? *", ANSI_ESCAPE.sub("", row))
+
+
+def test_render_route_table_prints_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    render_route_table(make_spec("/users"))
+
+    assert capsys.readouterr().out == ""

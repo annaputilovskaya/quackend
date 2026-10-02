@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import typer
 import uvicorn
+from rich.console import Console
 from rich.markup import escape as escape_markup
 
 from quackend import __version__
 from quackend.loader import load_openapi
-from quackend.reporting import console, render_route_table
+from quackend.reporting import render_route_table
 from quackend.server import build_app
 from quackend.store import QuackStore
 
 app = typer.Typer(add_completion=False)
+console = Console()
 
 
 def _emit_warning(message: str) -> None:
@@ -36,7 +38,7 @@ def routes(spec: str) -> None:
     Args:
         spec: path or URL of the OpenAPI spec.
     """
-    render_route_table(load_openapi(spec))
+    console.print(render_route_table(load_openapi(spec)))
 
 
 @app.command()
@@ -67,7 +69,7 @@ def start(
     spec_data = load_openapi(spec)
     store = QuackStore()
     store.set_seed(seed)
-    render_route_table(spec_data)
+    console.print(render_route_table(spec_data))
     if not quiet:
         typer.echo(f"quackend v{__version__}")
     app_obj = build_app(
