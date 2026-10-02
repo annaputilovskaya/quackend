@@ -1,9 +1,9 @@
+import inspect
 from types import MappingProxyType
 
 import pytest
-from faker import Faker
 
-from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
+from quackend.store import COLLECTION_SIZE, QuackStore, StoreConfig, StoreProtocol
 
 USER_SCHEMA = {
     "type": "object",
@@ -18,6 +18,16 @@ NESTED_SCHEMA = {
     "properties": {
         "name": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+NESTED_OBJECT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "a": {
+            "type": "object",
+            "properties": {"b": {"type": "object", "properties": {"c": {"type": "string"}}}},
+        }
     },
 }
 
@@ -149,13 +159,6 @@ def test_create_ignores_client_supplied_id(store: QuackStore) -> None:
     assert store.get("users", created["id"]) == created
 
 
-class _FalsyFaker(Faker):
-    """A fully working Faker that claims to be empty."""
-
-    def __bool__(self) -> bool:
-        return False
-
-
 class _FalsyWarn:
     """A working warn callback that claims to be empty."""
 
@@ -215,20 +218,6 @@ def test_update_accepts_a_read_only_payload() -> None:
     assert updated is not None
     assert updated["name"] == "Bob"
     assert updated["id"] == "1"
-
-
-def test_ensure_keeps_a_falsey_faker_instance() -> None:
-    fake = _FalsyFaker()
-    fake.seed_instance(42)
-    store = QuackStore(fake)
-    store.ensure("users", USER_SCHEMA)
-
-    control_fake = Faker()
-    control_fake.seed_instance(42)
-    control = QuackStore(control_fake)
-    control.ensure("users", USER_SCHEMA)
-
-    assert store.get_all("users") == control.get_all("users")
 
 
 def test_ensure_keeps_a_falsey_warn_callback() -> None:
@@ -343,3 +332,50 @@ def test_created_ids_are_unique_within_a_seeded_collection() -> None:
     created = [store.create("users", {"name": name})["id"] for name in ("Ann", "Bo", "Cy")]
 
     assert len(set(created)) == 3
+
+
+def test_the_store_takes_a_config_and_no_faker() -> None:
+    assert list(inspect.signature(QuackStore.__init__).parameters) == ["self", "config"]
+
+
+def test_the_collection_size_comes_from_the_config() -> None:
+    store = QuackStore(StoreConfig(collection_size=3))
+
+    store.ensure("users", USER_SCHEMA)
+
+    assert len(store.get_all("users")) == 3
+
+
+def test_the_depth_limit_comes_from_the_config() -> None:
+    store = QuackStore(StoreConfig(depth_limit=1))
+
+    store.ensure("widgets", NESTED_OBJECT_SCHEMA)
+
+    item = store.first("widgets")
+    assert item is not None
+    assert item["a"] == {"b": {}}
+
+
+def test_the_array_max_comes_from_the_config() -> None:
+    store = QuackStore(StoreConfig(array_max=2))
+
+    store.ensure("widgets", NESTED_SCHEMA)
+
+    items = store.get_all("widgets")
+    assert items
+    assert all(len(item["tags"]) <= 2 for item in items)
+
+
+def test_the_default_depth_limit_generates_one_level_deeper() -> None:
+    shallow = QuackStore(StoreConfig(depth_limit=1))
+    default = QuackStore()
+
+    shallow.ensure("widgets", NESTED_OBJECT_SCHEMA)
+    default.ensure("widgets", NESTED_OBJECT_SCHEMA)
+
+    shallow_item = shallow.first("widgets")
+    default_item = default.first("widgets")
+    assert shallow_item is not None
+    assert default_item is not None
+    assert shallow_item["a"] == {"b": {}}
+    assert isinstance(default_item["a"]["b"]["c"], str)

@@ -4,15 +4,35 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from faker import Faker
 
-from quackend.generator import generate_object
+from quackend.generator import ARRAY_MAX, DEPTH_LIMIT, generate_object
 
-__all__ = ["COLLECTION_SIZE", "QuackStore", "StoreProtocol"]
+__all__ = ["COLLECTION_SIZE", "QuackStore", "StoreConfig", "StoreProtocol"]
 
 COLLECTION_SIZE = 10
+
+
+@dataclass(frozen=True, slots=True)
+class StoreConfig:
+    """The limits a store generates with, as a value a caller can pass in.
+
+    Every default is the generator's own default, so an unconfigured store and a
+    store configured with `StoreConfig()` generate exactly the same data and the
+    two cannot drift apart.
+
+    Attributes:
+        collection_size: how many items a seeded collection holds.
+        depth_limit: how deep an object nests before it becomes empty.
+        array_max: the longest array a generated item can hold.
+    """
+
+    collection_size: int = COLLECTION_SIZE
+    depth_limit: int = DEPTH_LIMIT
+    array_max: int = ARRAY_MAX
 
 
 class StoreProtocol(Protocol):
@@ -143,15 +163,40 @@ class QuackStore:
     a payload it passed in.
     """
 
-    def __init__(self, fake: Faker | None = None) -> None:
-        """Initialize the store, optionally reusing a shared Faker instance.
+    def __init__(self, config: StoreConfig | None = None) -> None:
+        """Initialize the store with the limits it generates within.
 
         Args:
-            fake: an optional Faker instance; a new one is created otherwise.
+            config: the generation limits; the generator defaults are used
+                otherwise. The store owns its Faker, so determinism is requested
+                with :meth:`set_seed`.
         """
-        self._fake = fake if fake is not None else Faker()
+        self._config = config if config is not None else StoreConfig()
+        self._fake = Faker()
         self._collections: dict[str, dict[str, dict[str, Any]]] = {}
         self._counters: dict[str, int] = {}
+
+    def _generate(
+        self,
+        schema: Mapping[str, Any],
+        warn: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
+        """Generate one item with the limits this store is configured with.
+
+        Args:
+            schema: the item schema used by the generator.
+            warn: an optional callback receiving generator warnings.
+
+        Returns:
+            A generated object.
+        """
+        return generate_object(
+            schema,
+            self._fake,
+            warn,
+            depth_limit=self._config.depth_limit,
+            array_max=self._config.array_max,
+        )
 
     def set_seed(self, seed: int | None) -> None:
         """Seed the internal Faker for deterministic generation.
@@ -183,12 +228,12 @@ class QuackStore:
                 warn(f"{resource}: {message}")
 
         items: dict[str, dict[str, Any]] = {}
-        for i in range(1, COLLECTION_SIZE + 1):
-            item = generate_object(schema, self._fake, warn=on_warn)
+        for i in range(1, self._config.collection_size + 1):
+            item = self._generate(schema, on_warn)
             item["id"] = str(i)
             items[str(i)] = item
         self._collections[resource] = items
-        self._counters[resource] = COLLECTION_SIZE
+        self._counters[resource] = self._config.collection_size
 
     def get(self, resource: str, key: str) -> dict[str, Any] | None:
         """Return one item by key, or None when absent.
@@ -229,7 +274,7 @@ class QuackStore:
             if warn is not None:
                 warn(f"{resource}: {message}")
 
-        item = generate_object(schema, self._fake, warn=on_warn)
+        item = self._generate(schema, on_warn)
         item["id"] = key
         if resource not in self._collections:
             self._collections[resource] = {}

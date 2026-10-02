@@ -9,6 +9,15 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Added
 
+- `store.StoreConfig` carries the three limits a store generates with —
+  `collection_size`, `depth_limit` and `array_max` — and is passed to
+  `QuackStore(config=...)`; every default is the generator's own default, so an
+  unconfigured store generates exactly what it did before. `generate_value` and
+  `generate_object` take `depth_limit` and `array_max` as keyword-only
+  arguments. **Breaking**: `QuackStore` no longer takes a `Faker`, so a caller
+  that built `QuackStore(fake)` now passes a `StoreConfig` instead and requests
+  determinism with `set_seed`; a caller that needs an injected Faker (a fixed
+  locale, say) has to keep one on its own side.
 - The wheel ships `py.typed`, and `loader`, `store` and `server` declare
   `__all__`, so a consumer type-checks against the documented API instead of
   against `Any`.

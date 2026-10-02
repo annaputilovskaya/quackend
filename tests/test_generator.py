@@ -309,7 +309,13 @@ def test_generate_value_accepts_a_read_only_array_mapping(fake: Faker) -> None:
 
 
 def test_generate_value_public_call_takes_no_depth() -> None:
-    assert list(inspect.signature(generate_value).parameters) == ["schema", "fake", "warn"]
+    assert list(inspect.signature(generate_value).parameters) == [
+        "schema",
+        "fake",
+        "warn",
+        "depth_limit",
+        "array_max",
+    ]
 
 
 def test_generation_limits_are_published() -> None:
