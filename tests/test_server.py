@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import random
 import time
 from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
@@ -1025,3 +1026,40 @@ def test_declared_trace_refuses_to_build() -> None:
 
     assert "TRACE" in str(raised.value)
     assert "/items" in str(raised.value)
+
+
+def test_the_same_rng_reproduces_the_same_failures() -> None:
+    first, _ = make_client(fail_rate=0.5, rng=random.Random(7))
+    second, _ = make_client(fail_rate=0.5, rng=random.Random(7))
+
+    statuses = [first.get("/users").status_code for _ in range(20)]
+    again = [second.get("/users").status_code for _ in range(20)]
+
+    assert statuses == again
+    assert 500 in statuses
+
+
+class _NeverFailRandom(random.Random):
+    """An rng whose draw is above every probability, so no request can fail."""
+
+    def random(self) -> float:
+        return 1.0
+
+
+def test_the_injected_rng_is_the_one_drawn_from() -> None:
+    client, _ = make_client(fail_rate=0.5, rng=_NeverFailRandom())
+
+    statuses = [client.get("/users").status_code for _ in range(5)]
+
+    assert statuses == [200] * 5
+
+
+def test_build_app_rejects_a_negative_latency() -> None:
+    with pytest.raises(ValueError, match="latency_ms"):
+        build_app(make_status_spec(), latency_ms=-1)
+
+
+def test_build_app_rejects_an_out_of_range_fail_rate() -> None:
+    for fail_rate in (1.5, -0.1):
+        with pytest.raises(ValueError, match="fail_rate"):
+            build_app(make_status_spec(), fail_rate=fail_rate)

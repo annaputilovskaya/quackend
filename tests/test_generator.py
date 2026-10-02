@@ -1,4 +1,5 @@
 import datetime
+import inspect
 import json
 import re
 from types import MappingProxyType
@@ -7,7 +8,7 @@ from typing import Any
 import pytest
 from faker import Faker
 
-from quackend.generator import generate_object, generate_value
+from quackend.generator import ARRAY_MAX, DEPTH_LIMIT, generate_object, generate_value
 
 
 @pytest.fixture()
@@ -305,3 +306,18 @@ def test_generate_value_accepts_a_read_only_array_mapping(fake: Faker) -> None:
 
     assert 1 <= len(values) <= 5
     assert all(isinstance(value, int) and value >= 1 for value in values)
+
+
+def test_generate_value_public_call_takes_no_depth() -> None:
+    assert list(inspect.signature(generate_value).parameters) == [
+        "schema",
+        "fake",
+        "warn",
+        "depth_limit",
+        "array_max",
+    ]
+
+
+def test_generation_limits_are_published() -> None:
+    assert DEPTH_LIMIT == 3
+    assert ARRAY_MAX == 5

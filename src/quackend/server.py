@@ -308,6 +308,7 @@ def build_app(
     latency_ms: int = 0,
     fail_rate: float = 0.0,
     warn: Callable[[str], None] | None = None,
+    rng: random.Random | None = None,
 ) -> FastAPI:
     """Build a FastAPI app serving generated mock data for every spec operation.
 
@@ -318,16 +319,27 @@ def build_app(
         fail_rate: probability in [0, 1] that a request fails with HTTP 500.
         warn: an optional callback receiving fail-soft messages. Nothing is
             printed by the library; the caller decides how to surface them.
+        rng: the random source simulated failures are drawn from, so a seeded one
+            makes them reproducible; the module-global ``random`` is used
+            otherwise.
 
     Returns:
         A configured FastAPI application.
 
     Raises:
+        ValueError: if ``latency_ms`` is negative or ``fail_rate`` falls outside
+            [0, 1], because neither knob can do what it promises.
         UnsupportedOperationError: if the spec declares a verb the mock refuses
             to answer rather than drop it silently.
     """
+    if latency_ms < 0:
+        raise ValueError(f"latency_ms must not be negative, got {latency_ms}")
+    if not 0.0 <= fail_rate <= 1.0:
+        raise ValueError(f"fail_rate must be within [0, 1], got {fail_rate}")
+
     resolved_store = store if store is not None else QuackStore()
     emit = warn if warn is not None else _null_warn
+    draw: Callable[[], float] = rng.random if rng is not None else random.random
 
     operations = list(iter_operations(spec))
     _seed_resources(operations, resolved_store, emit)
@@ -339,7 +351,7 @@ def build_app(
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        if fail_rate and random.random() < fail_rate:
+        if fail_rate and draw() < fail_rate:
             return JSONResponse({"error": "mock failure"}, status_code=500)
         if latency_ms:
             await asyncio.sleep(latency_ms / 1000)

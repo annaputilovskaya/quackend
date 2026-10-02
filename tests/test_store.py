@@ -1,15 +1,33 @@
+import inspect
 from types import MappingProxyType
 
 import pytest
-from faker import Faker
 
-from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
+from quackend.store import COLLECTION_SIZE, QuackStore, StoreConfig, StoreProtocol
 
 USER_SCHEMA = {
     "type": "object",
     "properties": {
         "name": {"type": "string"},
         "email": {"type": "string", "format": "email"},
+    },
+}
+
+NESTED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+NESTED_OBJECT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "a": {
+            "type": "object",
+            "properties": {"b": {"type": "object", "properties": {"c": {"type": "string"}}}},
+        }
     },
 }
 
@@ -141,13 +159,6 @@ def test_create_ignores_client_supplied_id(store: QuackStore) -> None:
     assert store.get("users", created["id"]) == created
 
 
-class _FalsyFaker(Faker):
-    """A fully working Faker that claims to be empty."""
-
-    def __bool__(self) -> bool:
-        return False
-
-
 class _FalsyWarn:
     """A working warn callback that claims to be empty."""
 
@@ -209,20 +220,6 @@ def test_update_accepts_a_read_only_payload() -> None:
     assert updated["id"] == "1"
 
 
-def test_ensure_keeps_a_falsey_faker_instance() -> None:
-    fake = _FalsyFaker()
-    fake.seed_instance(42)
-    store = QuackStore(fake)
-    store.ensure("users", USER_SCHEMA)
-
-    control_fake = Faker()
-    control_fake.seed_instance(42)
-    control = QuackStore(control_fake)
-    control.ensure("users", USER_SCHEMA)
-
-    assert store.get_all("users") == control.get_all("users")
-
-
 def test_ensure_keeps_a_falsey_warn_callback() -> None:
     warn = _FalsyWarn()
     store = QuackStore()
@@ -239,3 +236,146 @@ def test_ensure_wraps_a_scalar_item_in_a_value_field() -> None:
 
     item = store.first("tags")
     assert item == {"value": "a", "id": "1"}
+
+
+def test_get_returns_a_detached_copy() -> None:
+    store = QuackStore()
+    store.ensure("widgets", NESTED_SCHEMA)
+
+    item = store.get("widgets", "1")
+    assert item is not None
+    item["tags"].append("mutated")
+
+    stored = store.get("widgets", "1")
+    assert stored is not None
+    assert "mutated" not in stored["tags"]
+
+
+def test_first_and_get_all_return_detached_copies() -> None:
+    store = QuackStore()
+    store.ensure("widgets", NESTED_SCHEMA)
+
+    first = store.first("widgets")
+    assert first is not None
+    first["tags"].append("mutated")
+
+    listed = store.get_all("widgets")
+    listed[0]["tags"].append("mutated-too")
+
+    reread_first = store.first("widgets")
+    assert reread_first is not None
+    assert "mutated" not in reread_first["tags"]
+    assert "mutated-too" not in store.get_all("widgets")[0]["tags"]
+
+
+def test_first_or_create_returns_a_detached_copy() -> None:
+    store = QuackStore()
+
+    created = store.first_or_create("widgets", "abc", NESTED_SCHEMA)
+    created["tags"].append("mutated")
+
+    stored = store.first_or_create("widgets", "abc", NESTED_SCHEMA)
+    assert "mutated" not in stored["tags"]
+
+
+def test_create_returns_a_detached_copy() -> None:
+    store = QuackStore()
+
+    created = store.create("widgets", {"tags": ["fresh"]})
+    created["tags"].append("mutated")
+
+    stored = store.get("widgets", created["id"])
+    assert stored is not None
+    assert stored["tags"] == ["fresh"]
+
+
+def test_update_copies_the_payload_and_returns_a_detached_copy() -> None:
+    store = QuackStore()
+    store.ensure("widgets", NESTED_SCHEMA)
+    payload = {"tags": ["submitted"]}
+
+    updated = store.update("widgets", "1", payload)
+    assert updated is not None
+    updated["tags"].append("mutated")
+    payload["tags"].append("mutated-in-the-payload-too")
+
+    stored = store.get("widgets", "1")
+    assert stored is not None
+    assert stored["tags"] == ["submitted"]
+
+
+def test_create_after_deleting_the_highest_id_does_not_reuse_it() -> None:
+    store = QuackStore()
+    store.ensure("users", USER_SCHEMA)
+    store.delete("users", str(COLLECTION_SIZE))
+
+    created = store.create("users", {"name": "Bob"})
+
+    assert created["id"] == str(COLLECTION_SIZE + 1)
+
+
+def test_create_after_deleting_every_id_does_not_restart_the_counter() -> None:
+    store = QuackStore()
+    store.ensure("users", USER_SCHEMA)
+    for position in range(1, COLLECTION_SIZE + 1):
+        store.delete("users", str(position))
+
+    created = store.create("users", {"name": "Bob"})
+
+    assert created["id"] == str(COLLECTION_SIZE + 1)
+
+
+def test_created_ids_are_unique_within_a_seeded_collection() -> None:
+    store = QuackStore()
+    store.ensure("users", USER_SCHEMA)
+
+    created = [store.create("users", {"name": name})["id"] for name in ("Ann", "Bo", "Cy")]
+
+    assert len(set(created)) == 3
+
+
+def test_the_store_takes_a_config_and_no_faker() -> None:
+    assert list(inspect.signature(QuackStore.__init__).parameters) == ["self", "config"]
+
+
+def test_the_collection_size_comes_from_the_config() -> None:
+    store = QuackStore(StoreConfig(collection_size=3))
+
+    store.ensure("users", USER_SCHEMA)
+
+    assert len(store.get_all("users")) == 3
+
+
+def test_the_depth_limit_comes_from_the_config() -> None:
+    store = QuackStore(StoreConfig(depth_limit=1))
+
+    store.ensure("widgets", NESTED_OBJECT_SCHEMA)
+
+    item = store.first("widgets")
+    assert item is not None
+    assert item["a"] == {"b": {}}
+
+
+def test_the_array_max_comes_from_the_config() -> None:
+    store = QuackStore(StoreConfig(array_max=2))
+
+    store.ensure("widgets", NESTED_SCHEMA)
+
+    items = store.get_all("widgets")
+    assert items
+    assert all(len(item["tags"]) <= 2 for item in items)
+
+
+def test_the_default_depth_limit_generates_one_level_deeper() -> None:
+    shallow = QuackStore(StoreConfig(depth_limit=1))
+    default = QuackStore()
+
+    shallow.ensure("widgets", NESTED_OBJECT_SCHEMA)
+    default.ensure("widgets", NESTED_OBJECT_SCHEMA)
+
+    shallow_item = shallow.first("widgets")
+    default_item = default.first("widgets")
+    assert shallow_item is not None
+    assert default_item is not None
+    assert shallow_item["a"] == {"b": {}}
+    assert isinstance(default_item["a"]["b"]["c"], str)

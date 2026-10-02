@@ -9,6 +9,15 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Added
 
+- `store.StoreConfig` carries the three limits a store generates with —
+  `collection_size`, `depth_limit` and `array_max` — and is passed to
+  `QuackStore(config=...)`; every default is the generator's own default, so an
+  unconfigured store generates exactly what it did before. `generate_value` and
+  `generate_object` take `depth_limit` and `array_max` as keyword-only
+  arguments. **Breaking**: `QuackStore` no longer takes a `Faker`, so a caller
+  that built `QuackStore(fake)` now passes a `StoreConfig` instead and requests
+  determinism with `set_seed`; a caller that needs an injected Faker (a fixed
+  locale, say) has to keep one on its own side.
 - The wheel ships `py.typed`, and `loader`, `store` and `server` declare
   `__all__`, so a consumer type-checks against the documented API instead of
   against `Any`.
@@ -25,6 +34,17 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Fixed
 
+- Every value that crosses the store boundary is a deep copy: mutating an item,
+  a list or a nested value that came out of `store` no longer changes what the
+  store holds, and mutating a payload passed to `store.create` or `store.update`
+  no longer changes what it stored. **Breaking**: a caller that relied on
+  identity (`store.get(...) is store.get(...)`, or editing the store through a
+  returned item) has to work on copies instead.
+- `store.create` never reuses an id: deleting the highest id of a seeded
+  collection and creating again now numbers the new item after it instead of
+  filling the gap, so a client that already saw that id does not resolve to a
+  different object. **Breaking**: the ids of a collection are not contiguous any
+  more after a delete; code that assumed a collection is `1..N` has to count.
 - An operation whose only success response is the `2XX` range serves generated
   data for its declared schema instead of `[]`, and both the status and the
   schema are now read through one parser, so they can no longer disagree.
@@ -59,6 +79,17 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- `build_app` takes an `rng` the simulated failures are drawn from, so
+  `build_app(..., rng=random.Random(7))` makes them reproducible, and it rejects
+  a negative `latency_ms` and a `fail_rate` outside `[0, 1]` with a `ValueError`
+  instead of mocking something else. **Breaking**: a caller that passed an
+  out-of-range `fail_rate` — say `2.0` by mistake — used to get an app that
+  failed every request forever and now gets a loud error at startup.
+- The generation limits are published as `generator.DEPTH_LIMIT` and
+  `generator.ARRAY_MAX`, and every remaining magic number of the generator
+  carries a name. **Breaking**: `generate_value` no longer takes `depth`, so a
+  caller can no longer start the recursion below the top of a schema and skip the
+  depth guard; `warn` is its third parameter now.
 - Rendering a route table is pure: `render_route_table` returns the table and
   `quackend routes` and `quackend start` print it, so nothing below `cli` writes
   to a stream. **Breaking**: `quackend.reporting.console` moved to

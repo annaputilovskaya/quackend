@@ -11,8 +11,16 @@ from faker import Faker
 
 _T = TypeVar("_T", int, float)
 
-_DEPTH_LIMIT = 3
-_ARRAY_MAX = 5
+__all__ = ["ARRAY_MAX", "DEPTH_LIMIT", "generate_object", "generate_value"]
+
+DEPTH_LIMIT = 3
+ARRAY_MAX = 5
+_ARRAY_MIN = 1
+_BYTE_LENGTH = 4
+_BINARY_LENGTH = 8
+_STRING_PADDING = 20
+_NUMERIC_STRING_LOW = 0
+_NUMERIC_STRING_HIGH = 100
 _DEFAULT_INTEGER_MAX = 9_999
 _DEFAULT_NUMBER_MAX = 1_000_000
 _JSON_SCALARS = (str, int, float, bool, type(None))
@@ -27,8 +35,8 @@ _FORMAT_PRODUCERS: dict[str, Callable[[Faker], str]] = {
     "hostname": lambda f: f.hostname(),
     "ipv4": lambda f: f.ipv4(),
     "ipv6": lambda f: f.ipv6(),
-    "byte": lambda f: f.binary(4).hex(),
-    "binary": lambda f: f.binary(8).hex(),
+    "byte": lambda f: f.binary(_BYTE_LENGTH).hex(),
+    "binary": lambda f: f.binary(_BINARY_LENGTH).hex(),
     "password": lambda f: f.password(),
 }
 
@@ -36,16 +44,46 @@ _FORMAT_PRODUCERS: dict[str, Callable[[Faker], str]] = {
 def generate_value(
     schema: Mapping[str, Any],
     fake: Faker,
-    depth: int = 0,
     warn: Callable[[str], None] | None = None,
+    *,
+    depth_limit: int = DEPTH_LIMIT,
+    array_max: int = ARRAY_MAX,
 ) -> Any:
     """Generate a fake value matching a JSON Schema fragment.
 
     Args:
         schema: a JSON Schema fragment to satisfy.
         fake: a Faker instance used to produce values.
-        depth: current nesting depth, guards against runaway recursion.
         warn: optional callback invoked with a message for fail-soft cases.
+        depth_limit: how deep an object nests before it becomes empty.
+        array_max: the longest array a schema can produce.
+
+    Returns:
+        A generated value, or None when the schema is missing or unsupported.
+    """
+    return _generate_value(schema, fake, 0, warn, depth_limit, array_max)
+
+
+def _generate_value(
+    schema: Mapping[str, Any],
+    fake: Faker,
+    depth: int,
+    warn: Callable[[str], None] | None,
+    depth_limit: int,
+    array_max: int,
+) -> Any:
+    """Generate a value at a known nesting depth.
+
+    The depth is private on purpose: a caller that could pass one in would be
+    able to start below the top of a schema and silently skip the depth guard.
+
+    Args:
+        schema: a JSON Schema fragment to satisfy.
+        fake: a Faker instance used to produce values.
+        depth: current nesting depth, guards against runaway recursion.
+        warn: an optional callback invoked with a message for fail-soft cases.
+        depth_limit: how deep an object nests before it becomes empty.
+        array_max: the longest array a schema can produce.
 
     Returns:
         A generated value, or None when the schema is missing or unsupported.
@@ -64,12 +102,12 @@ def generate_value(
         branch = next((b for b in branches if b.get("example") is not None), branches[0])
         if warn is not None:
             warn("used first branch of oneOf/anyOf")
-        return generate_value(branch, fake, depth + 1, warn)
+        return _generate_value(branch, fake, depth + 1, warn, depth_limit, array_max)
     if "allOf" in schema:
         all_branches: list[dict[str, Any]] = schema["allOf"]
         example_branch = next((b for b in all_branches if b.get("example") is not None), None)
         if example_branch is not None:
-            return generate_value(example_branch, fake, depth + 1, warn)
+            return _generate_value(example_branch, fake, depth + 1, warn, depth_limit, array_max)
         merged: dict[str, Any] = {}
         for branch in all_branches:
             branch_props: Any = branch.get("properties")
@@ -78,18 +116,21 @@ def generate_value(
                 merged["properties"] = {**merged_props, **branch_props}
             else:
                 merged.update(branch)
-        return generate_value(merged, fake, depth + 1, warn)
+        return _generate_value(merged, fake, depth + 1, warn, depth_limit, array_max)
     schema_type = schema.get("type")
     if not schema_type:
         if warn is not None:
             warn("missing type, returning null")
         return None
     if schema_type == "object":
-        return _object_value(schema, fake, depth, warn)
+        return _object_value(schema, fake, depth, warn, depth_limit, array_max)
     if schema_type == "array":
         items = schema.get("items") or {}
-        length = fake.random.randint(1, _ARRAY_MAX)
-        return [generate_value(items, fake, depth + 1, warn) for _ in range(length)]
+        length = fake.random.randint(_ARRAY_MIN, array_max)
+        return [
+            _generate_value(items, fake, depth + 1, warn, depth_limit, array_max)
+            for _ in range(length)
+        ]
     if schema_type == "integer":
         return _integer_value(schema, fake, warn)
     if schema_type == "number":
@@ -107,6 +148,9 @@ def generate_object(
     schema: Mapping[str, Any],
     fake: Faker,
     warn: Callable[[str], None] | None = None,
+    *,
+    depth_limit: int = DEPTH_LIMIT,
+    array_max: int = ARRAY_MAX,
 ) -> dict[str, Any]:
     """Generate a JSON-Schema object, wrapping scalar schemas in a value field.
 
@@ -114,11 +158,13 @@ def generate_object(
         schema: a JSON Schema fragment expected to describe an object.
         fake: a Faker instance used to produce values.
         warn: an optional callback receiving fail-soft messages.
+        depth_limit: how deep an object nests before it becomes empty.
+        array_max: the longest array a schema can produce.
 
     Returns:
         A generated object; scalar schemas are wrapped as ``{"value": <scalar>}``.
     """
-    value = generate_value(schema, fake, warn=warn)
+    value = generate_value(schema, fake, warn, depth_limit=depth_limit, array_max=array_max)
     return value if isinstance(value, dict) else {"value": value}
 
 
@@ -127,11 +173,13 @@ def _object_value(
     fake: Faker,
     depth: int,
     warn: Callable[[str], None] | None,
+    depth_limit: int,
+    array_max: int,
 ) -> dict[str, Any]:
-    if depth > _DEPTH_LIMIT:
+    if depth > depth_limit:
         return {}
     return {
-        name: generate_value(sub_schema, fake, depth + 1, warn)
+        name: _generate_value(sub_schema, fake, depth + 1, warn, depth_limit, array_max)
         for name, sub_schema in (schema.get("properties") or {}).items()
     }
 
@@ -240,7 +288,7 @@ def _string_value(schema: Mapping[str, Any], fake: Faker) -> str:
         return fake.pystr(max_chars=max_length)
     min_length: int | None = schema.get("minLength")
     if min_length is not None:
-        return fake.pystr(min_chars=min_length, max_chars=min_length + 20)
+        return fake.pystr(min_chars=min_length, max_chars=min_length + _STRING_PADDING)
     return fake.word()
 
 
@@ -258,8 +306,8 @@ def _is_numeric_pattern(pattern: str) -> bool:
 
 
 def _numeric_string_value(schema: Mapping[str, Any], fake: Faker) -> str:
-    low = float(schema.get("minimum", 0))
-    high = float(schema.get("maximum", 100))
+    low = float(schema.get("minimum", _NUMERIC_STRING_LOW))
+    high = float(schema.get("maximum", _NUMERIC_STRING_HIGH))
     raw = fake.random.uniform(low, high)
     regex = re.compile(schema["pattern"])
     candidates = (f"{raw:.2f}", str(int(round(raw))))
