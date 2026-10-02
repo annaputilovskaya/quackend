@@ -13,6 +13,14 @@ USER_SCHEMA = {
     },
 }
 
+NESTED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
 
 @pytest.fixture()
 def store() -> QuackStore:
@@ -239,3 +247,69 @@ def test_ensure_wraps_a_scalar_item_in_a_value_field() -> None:
 
     item = store.first("tags")
     assert item == {"value": "a", "id": "1"}
+
+
+def test_get_returns_a_detached_copy() -> None:
+    store = QuackStore()
+    store.ensure("widgets", NESTED_SCHEMA)
+
+    item = store.get("widgets", "1")
+    assert item is not None
+    item["tags"].append("mutated")
+
+    stored = store.get("widgets", "1")
+    assert stored is not None
+    assert "mutated" not in stored["tags"]
+
+
+def test_first_and_get_all_return_detached_copies() -> None:
+    store = QuackStore()
+    store.ensure("widgets", NESTED_SCHEMA)
+
+    first = store.first("widgets")
+    assert first is not None
+    first["tags"].append("mutated")
+
+    listed = store.get_all("widgets")
+    listed[0]["tags"].append("mutated-too")
+
+    reread_first = store.first("widgets")
+    assert reread_first is not None
+    assert "mutated" not in reread_first["tags"]
+    assert "mutated-too" not in store.get_all("widgets")[0]["tags"]
+
+
+def test_first_or_create_returns_a_detached_copy() -> None:
+    store = QuackStore()
+
+    created = store.first_or_create("widgets", "abc", NESTED_SCHEMA)
+    created["tags"].append("mutated")
+
+    stored = store.first_or_create("widgets", "abc", NESTED_SCHEMA)
+    assert "mutated" not in stored["tags"]
+
+
+def test_create_returns_a_detached_copy() -> None:
+    store = QuackStore()
+
+    created = store.create("widgets", {"tags": ["fresh"]})
+    created["tags"].append("mutated")
+
+    stored = store.get("widgets", created["id"])
+    assert stored is not None
+    assert stored["tags"] == ["fresh"]
+
+
+def test_update_copies_the_payload_and_returns_a_detached_copy() -> None:
+    store = QuackStore()
+    store.ensure("widgets", NESTED_SCHEMA)
+    payload = {"tags": ["submitted"]}
+
+    updated = store.update("widgets", "1", payload)
+    assert updated is not None
+    updated["tags"].append("mutated")
+    payload["tags"].append("mutated-in-the-payload-too")
+
+    stored = store.get("widgets", "1")
+    assert stored is not None
+    assert stored["tags"] == ["submitted"]

@@ -52,7 +52,7 @@ class StoreProtocol(Protocol):
             key: the item key.
 
         Returns:
-            The stored item, or None when the key is missing.
+            A copy of the stored item, or None when the key is missing.
         """
 
     def first(self, resource: str) -> dict[str, Any] | None:
@@ -62,8 +62,8 @@ class StoreProtocol(Protocol):
             resource: the collection name.
 
         Returns:
-            The first item in insertion order, or None for a missing or empty
-            collection.
+            A copy of the first item in insertion order, or None for a missing or
+            empty collection.
         """
 
     def get_all(self, resource: str) -> list[dict[str, Any]]:
@@ -73,7 +73,7 @@ class StoreProtocol(Protocol):
             resource: the collection name.
 
         Returns:
-            A list of the stored items.
+            A list of copies of the stored items.
         """
 
     def first_or_create(
@@ -92,7 +92,7 @@ class StoreProtocol(Protocol):
             warn: an optional callback receiving generator warnings.
 
         Returns:
-            The stored item, generated on demand when the key is missing.
+            A copy of the stored item, generated on demand when the key is missing.
         """
 
     def create(self, resource: str, data: Mapping[str, Any]) -> dict[str, Any]:
@@ -103,7 +103,7 @@ class StoreProtocol(Protocol):
             data: the item payload.
 
         Returns:
-            The stored item, including its assigned id.
+            A copy of the stored item, including its assigned id.
         """
 
     def update(
@@ -120,7 +120,7 @@ class StoreProtocol(Protocol):
             data: the fields to merge.
 
         Returns:
-            The updated item, or None when the key is missing.
+            A copy of the updated item, or None when the key is missing.
         """
 
     def delete(self, resource: str, key: str) -> bool:
@@ -136,7 +136,12 @@ class StoreProtocol(Protocol):
 
 
 class QuackStore:
-    """Store mock items keyed by string ids, one collection per resource."""
+    """Store mock items keyed by string ids, one collection per resource.
+
+    Every item crosses the store boundary as a deep copy, so a client can neither
+    read the store's data by mutating what it was handed nor write it by mutating
+    a payload it passed in.
+    """
 
     def __init__(self, fake: Faker | None = None) -> None:
         """Initialize the store, optionally reusing a shared Faker instance.
@@ -193,9 +198,10 @@ class QuackStore:
             key: the item key.
 
         Returns:
-            The stored item, or None when the key is missing.
+            A copy of the stored item, or None when the key is missing.
         """
-        return (self._collections.get(resource) or {}).get(key)
+        item = (self._collections.get(resource) or {}).get(key)
+        return copy.deepcopy(item) if item is not None else None
 
     def first_or_create(
         self,
@@ -213,7 +219,7 @@ class QuackStore:
             warn: an optional callback receiving generator warnings.
 
         Returns:
-            The stored item, generated on demand when the key is missing.
+            A copy of the stored item, generated on demand when the key is missing.
         """
         existing = self.get(resource, key)
         if existing is not None:
@@ -228,7 +234,7 @@ class QuackStore:
         if resource not in self._collections:
             self._collections[resource] = {}
         self._collections[resource][key] = item
-        return item
+        return copy.deepcopy(item)
 
     def first(self, resource: str) -> dict[str, Any] | None:
         """Return the first stored item of a collection.
@@ -237,11 +243,11 @@ class QuackStore:
             resource: the collection name.
 
         Returns:
-            The first item in insertion order, or None for a missing or empty
-            collection.
+            A copy of the first item in insertion order, or None for a missing or
+            empty collection.
         """
         values = list((self._collections.get(resource) or {}).values())
-        return values[0] if values else None
+        return copy.deepcopy(values[0]) if values else None
 
     def get_all(self, resource: str) -> list[dict[str, Any]]:
         """Return all items of a collection in insertion order.
@@ -250,9 +256,9 @@ class QuackStore:
             resource: the collection name.
 
         Returns:
-            A list of the stored items.
+            A list of copies of the stored items.
         """
-        return list((self._collections.get(resource) or {}).values())
+        return copy.deepcopy(list((self._collections.get(resource) or {}).values()))
 
     def _next_key(self, resource: str) -> str:
         existing = (self._collections.get(resource) or {}).keys()
@@ -270,13 +276,13 @@ class QuackStore:
             data: the item payload.
 
         Returns:
-            The stored item, including its assigned id.
+            A copy of the stored item, including its assigned id.
         """
         key = self._next_key(resource)
         item = copy.deepcopy(dict(data))
         item["id"] = key
         self._collections.setdefault(resource, {})[key] = item
-        return item
+        return copy.deepcopy(item)
 
     def update(
         self,
@@ -292,15 +298,15 @@ class QuackStore:
             data: the fields to merge.
 
         Returns:
-            The updated item, or None when the key is missing.
+            A copy of the updated item, or None when the key is missing.
         """
         collection = self._collections.get(resource)
         if not collection or key not in collection:
             return None
-        item = {**collection[key], **data}
+        item = {**collection[key], **copy.deepcopy(dict(data))}
         item["id"] = key
         collection[key] = item
-        return item
+        return copy.deepcopy(item)
 
     def delete(self, resource: str, key: str) -> bool:
         """Remove an item, reporting whether it existed.

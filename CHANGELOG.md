@@ -25,6 +25,12 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Fixed
 
+- Every value that crosses the store boundary is a deep copy: mutating an item,
+  a list or a nested value that came out of `store` no longer changes what the
+  store holds, and mutating a payload passed to `store.create` or `store.update`
+  no longer changes what it stored. **Breaking**: a caller that relied on
+  identity (`store.get(...) is store.get(...)`, or editing the store through a
+  returned item) has to work on copies instead.
 - An operation whose only success response is the `2XX` range serves generated
   data for its declared schema instead of `[]`, and both the status and the
   schema are now read through one parser, so they can no longer disagree.
