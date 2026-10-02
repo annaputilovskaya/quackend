@@ -14,12 +14,14 @@ __all__ = [
     "Operation",
     "Route",
     "iter_operations",
+    "iter_success_responses",
     "load_openapi",
     "operation_response_schema",
     "path_resource",
 ]
 
 _PARAM_PATTERN = re.compile(r"\{(\w+)\}")
+_RANGE_PATTERN = re.compile(r"\d[xX]{2}")
 _METHODS: tuple[str, ...] = ("get", "post", "put", "delete", "patch")
 
 
@@ -102,15 +104,48 @@ def _item_schema(schema: Mapping[str, Any]) -> Mapping[str, Any]:
     return schema
 
 
-def _first_success_status(operation: Mapping[str, Any]) -> int:
-    for raw_status in sorted(operation.get("responses") or {}):
-        try:
-            code = int(raw_status)
-        except (TypeError, ValueError):
+def _status_code(raw_status: object) -> int | None:
+    """Read one response key as a status code.
+
+    Args:
+        raw_status: a response key such as ``"200"``, ``"2XX"`` or ``"default"``.
+
+    Returns:
+        The status code, a range key read as the lower bound of its range
+        (``"2XX"`` becomes ``200``), or None when the key declares no status.
+    """
+    text = str(raw_status)
+    if _RANGE_PATTERN.fullmatch(text):
+        return int(text[0]) * 100
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def iter_success_responses(
+    operation: Mapping[str, Any],
+) -> Iterator[tuple[int, Mapping[str, Any]]]:
+    """Yield every 2xx response of an operation together with its status code.
+
+    This is the only place that decides whether a response key is a success, so an
+    operation can never answer one status and serve the schema of another. Keys are
+    read in ascending *key* order rather than numeric order: "204" then sorts before
+    "2XX", so an explicit status wins over the range that would otherwise swallow it.
+
+    Args:
+        operation: a single OpenAPI operation object.
+
+    Yields:
+        One ``(status, response)`` pair per 2xx response, in ascending key order.
+        A range key yields the lower bound of its range, so "2XX" yields 200.
+    """
+    responses = operation.get("responses") or {}
+    for raw_status in sorted(responses):
+        code = _status_code(raw_status)
+        if code is None or not 200 <= code < 300:
             continue
-        if 200 <= code < 300:
-            return code
-    return 200
+        yield code, responses[raw_status]
 
 
 def iter_operations(spec: Mapping[str, Any]) -> Iterator[Operation]:
@@ -130,12 +165,13 @@ def iter_operations(spec: Mapping[str, Any]) -> Iterator[Operation]:
                 continue
             route = parse_route(path_template)
             schema = operation_response_schema(operation)
+            first_success = next(iter_success_responses(operation), None)
             yield Operation(
                 path=route.path,
                 method=method,
                 resource=route.resource,
                 params=route.params,
-                ok_status=_first_success_status(operation),
+                ok_status=first_success[0] if first_success is not None else 200,
                 item_schema=_item_schema(schema) if schema else None,
                 is_list=schema is not None and schema.get("type") == "array",
             )
@@ -155,7 +191,9 @@ def operation_response_schema(operation: Mapping[str, Any]) -> dict[str, Any] | 
 
     Reads the OpenAPI 3 ``content["application/json"]`` entry (media-type
     parameters such as ``; charset=utf-8`` are ignored) and falls back to the
-    Swagger 2.0 top-level ``schema`` field.
+    Swagger 2.0 top-level ``schema`` field. The successes are read through
+    :func:`iter_success_responses`, so the schema cannot be picked from a response
+    the mock would not answer.
 
     Args:
         operation: a single OpenAPI operation object.
@@ -163,15 +201,7 @@ def operation_response_schema(operation: Mapping[str, Any]) -> dict[str, Any] | 
     Returns:
         The response schema dict, or None when no 2xx JSON schema exists.
     """
-    responses = operation.get("responses") or {}
-    for raw_status in sorted(responses):
-        try:
-            code = int(raw_status)
-        except (TypeError, ValueError):
-            continue
-        if not (200 <= code < 300):
-            continue
-        response = responses[raw_status]
+    for _, response in iter_success_responses(operation):
         media = _json_media(response.get("content") or {})
         schema: dict[str, Any] | None = media.get("schema") if media is not None else None
         if schema is None:

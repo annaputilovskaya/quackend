@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from quackend.loader import load_openapi
 from quackend.server import build_app
-from quackend.store import QuackStore, StoreProtocol
+from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -876,3 +876,43 @@ def test_build_app_accepts_a_read_only_spec() -> None:
     app = build_app(MappingProxyType(make_store_spec()))
 
     assert TestClient(app).get("/items").status_code == 200
+
+
+# The wildcard is the only success the operation declares, so it decides both the
+# status and the schema: reading it as "no schema" would mock an empty list.
+def make_range_only_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "range", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "2XX": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {"name": {"type": "string"}},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_range_only_response_serves_the_declared_array() -> None:
+    client = TestClient(build_app(make_range_only_spec()))
+
+    body = client.get("/items").json()
+
+    assert len(body) == COLLECTION_SIZE
+    assert all(isinstance(item["name"], str) for item in body)

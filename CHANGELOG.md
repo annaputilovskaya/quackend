@@ -25,6 +25,12 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Fixed
 
+- An operation whose only success response is the `2XX` range serves generated
+  data for its declared schema instead of `[]`, and both the status and the
+  schema are now read through one parser, so they can no longer disagree.
+  **Breaking**: such an operation now answers a body where it used to answer an
+  empty list. An operation with no 2xx response and no schema still mocks `[]`;
+  that part is unchanged.
 - `store.create` derives `id` from the storage key, so `POST` and `GET` of the
   same resource always address the same object. **Breaking**: an `id` sent by a
   client in a `POST` body is ignored.
