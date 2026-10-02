@@ -79,6 +79,12 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- `build_app` takes an `rng` the simulated failures are drawn from, so
+  `build_app(..., rng=random.Random(7))` makes them reproducible, and it rejects
+  a negative `latency_ms` and a `fail_rate` outside `[0, 1]` with a `ValueError`
+  instead of mocking something else. **Breaking**: a caller that passed an
+  out-of-range `fail_rate` — say `2.0` by mistake — used to get an app that
+  failed every request forever and now gets a loud error at startup.
 - The generation limits are published as `generator.DEPTH_LIMIT` and
   `generator.ARRAY_MAX`, and every remaining magic number of the generator
   carries a name. **Breaking**: `generate_value` no longer takes `depth`, so a
