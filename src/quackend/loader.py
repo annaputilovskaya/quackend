@@ -13,11 +13,14 @@ import prance
 __all__ = [
     "Operation",
     "Route",
+    "is_templated",
     "iter_operations",
     "iter_success_responses",
     "load_openapi",
     "operation_response_schema",
+    "parse_route",
     "path_resource",
+    "resolve_resource",
 ]
 
 _PARAM_PATTERN = re.compile(r"\{(\w+)\}")
@@ -95,6 +98,38 @@ def parse_route(path_template: str) -> Route:
         resource=path_resource(path_template),
         params=tuple(_PARAM_PATTERN.findall(path_template)),
     )
+
+
+def is_templated(resource: str) -> bool:
+    """Report whether a collection key still holds a path parameter.
+
+    Args:
+        resource: a collection key such as ``"monitors/{monitor_id}/uptime"``.
+
+    Returns:
+        True when the key names a parent instead of one concrete collection, so
+        it has to be bound to a request before it can address stored items.
+    """
+    return _PARAM_PATTERN.search(resource) is not None
+
+
+def resolve_resource(route: Route, values: Mapping[str, Any]) -> str:
+    """Return the collection key a route addresses for one request.
+
+    Args:
+        route: the parsed route of the requested path.
+        values: the path parameters the request supplied.
+
+    Returns:
+        The collection key with every supplied parameter substituted. A parameter
+        the request does not supply stays literal, so an unresolved key is still
+        recognisable as a template instead of losing a segment.
+    """
+
+    def substitute(match: re.Match[str]) -> str:
+        return str(values.get(match.group(1), match.group(0)))
+
+    return _PARAM_PATTERN.sub(substitute, route.resource)
 
 
 def _item_schema(schema: Mapping[str, Any]) -> Mapping[str, Any]:

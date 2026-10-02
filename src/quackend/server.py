@@ -6,12 +6,19 @@ import asyncio
 import json
 import random
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from quackend.loader import Operation, iter_operations
+from quackend.loader import (
+    Operation,
+    is_templated,
+    iter_operations,
+    parse_route,
+    resolve_resource,
+)
 from quackend.store import QuackStore, StoreProtocol
 
 _MAX_BODY_BYTES = 1_048_576
@@ -87,8 +94,14 @@ def _seed_resources(
     warn: Callable[[str], None],
 ) -> None:
     for operation in operations:
-        if operation.method == "get" and operation.item_schema is not None:
-            store.ensure(operation.resource, operation.item_schema, warn=warn)
+        if operation.method != "get" or operation.item_schema is None:
+            continue
+        # A collection under a path parameter belongs to the parent a request
+        # names, and no request has named one yet, so it is created lazily by
+        # _bind_resource instead of once per spec at startup.
+        if is_templated(operation.resource):
+            continue
+        store.ensure(operation.resource, operation.item_schema, warn=warn)
 
 
 async def _handle_get(
@@ -157,6 +170,33 @@ async def _handle_delete(
     return _ok_response({"deleted": key}, operation.ok_status)
 
 
+def _bind_resource(
+    operation: Operation,
+    store: StoreProtocol,
+    values: Mapping[str, Any],
+    warn: Callable[[str], None],
+) -> Operation:
+    """Return the operation addressed to the concrete parent this request names.
+
+    Args:
+        operation: the operation the request matched.
+        store: the store backing the app.
+        values: the path parameters of the request.
+        warn: the callback receiving generator warnings.
+
+    Returns:
+        The operation unchanged when its collection is already concrete, otherwise
+        a copy whose resource is the bound collection, seeded on the first request
+        that names a parent.
+    """
+    if not is_templated(operation.resource):
+        return operation
+    resource = resolve_resource(parse_route(operation.path), values)
+    if operation.method == "get" and operation.item_schema is not None:
+        store.ensure(resource, operation.item_schema, warn=warn)
+    return replace(operation, resource=resource)
+
+
 _Handler = Callable[[Operation, StoreProtocol, Request, Callable[[str], None]], Awaitable[Response]]
 
 _VERBS: dict[str, _Handler] = {
@@ -175,7 +215,8 @@ def _endpoint(
     warn: Callable[[str], None],
 ) -> Callable[[Request], Awaitable[Response]]:
     async def _view(request: Request) -> Response:
-        return await handler(operation, store, request, warn)
+        bound = _bind_resource(operation, store, request.path_params, warn)
+        return await handler(bound, store, request, warn)
 
     return _view
 

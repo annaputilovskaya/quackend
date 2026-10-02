@@ -40,6 +40,13 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - Nested resources are keyed by every path parameter, so
   `/orgs/{org_id}/members/{member_id}` no longer addresses the same member for
   every parent.
+- A collection nested under a path parameter belongs to the parent the request
+  names, so `/monitors/m1/uptime` and `/monitors/m2/uptime` are two collections
+  instead of one shared bucket. **Breaking**: the store key holds the bound
+  parent (`api/v1/upcheck/monitors/xyz/uptime`), so a hand-written
+  `QuackStore` consumer that looks up `orgs/{org_id}/members` directly sees
+  nothing and has to resolve the parent first; such a collection is created on
+  the first request instead of at startup.
 - Inverted numeric bounds (`minimum` above `maximum`) are swapped and reported
   as a warning instead of raising `ValueError` while the server starts.
 - Spec text that looks like Rich markup is escaped before it reaches the

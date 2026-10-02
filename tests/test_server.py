@@ -394,9 +394,9 @@ def test_nested_delete_removes_the_addressed_member() -> None:
     client, store = make_nested_resources_client()
     client.get("/orgs/orgA/members/alice")
 
-    assert store.get("orgs/{org_id}/members", "orgA/alice") is not None
+    assert store.get("orgs/orgA/members", "orgA/alice") is not None
     assert client.delete("/orgs/orgA/members/alice").status_code == 200
-    assert store.get("orgs/{org_id}/members", "orgA/alice") is None
+    assert store.get("orgs/orgA/members", "orgA/alice") is None
 
 
 def make_inverted_bounds_spec() -> dict[str, Any]:
@@ -664,8 +664,8 @@ def test_nested_get_without_a_response_schema_answers_404() -> None:
     spec = make_schemaless_nested_spec()
     store = QuackStore()
     member = {"type": "object", "properties": {"name": {"type": "string"}}}
-    alice = store.first_or_create("orgs/{org_id}/members", "orgA/alice", member)
-    store.first_or_create("orgs/{org_id}/members", "orgA/bob", member)
+    alice = store.first_or_create("orgs/orgA/members", "orgA/alice", member)
+    store.first_or_create("orgs/orgA/members", "orgA/bob", member)
     client = TestClient(build_app(spec, store))
 
     served = client.get("/orgs/orgA/members/alice")
@@ -916,3 +916,36 @@ def test_range_only_response_serves_the_declared_array() -> None:
 
     assert len(body) == COLLECTION_SIZE
     assert all(isinstance(item["name"], str) for item in body)
+
+
+def test_nested_collection_is_stored_per_concrete_parent() -> None:
+    client, store = make_nested_client()
+
+    client.get("/api/v1/upcheck/monitors/xyz/uptime")
+    client.get("/api/v1/upcheck/monitors/other/uptime")
+
+    assert len(store.get_all("api/v1/upcheck/monitors/xyz/uptime")) == COLLECTION_SIZE
+    assert len(store.get_all("api/v1/upcheck/monitors/other/uptime")) == COLLECTION_SIZE
+    # The templated key is never created: nested.yaml declares no verb here that
+    # deletes, so a get_all on it is enough to show it stays empty forever.
+    assert store.get_all("api/v1/upcheck/monitors/{monitor_id}/uptime") == []
+
+
+def test_nested_detail_is_stored_under_the_parent_the_request_names() -> None:
+    client, store = make_nested_resources_client()
+
+    alice = client.get("/orgs/orgA/members/alice").json()
+
+    assert alice["id"] == "orgA/alice"
+    assert store.get("orgs/orgA/members", "orgA/alice") == alice
+
+
+def test_nested_delete_removes_the_member_of_the_addressed_parent_only() -> None:
+    client, store = make_nested_resources_client()
+    client.get("/orgs/orgA/members/alice")
+    client.get("/orgs/orgB/members/alice")
+
+    assert client.delete("/orgs/orgA/members/alice").status_code == 200
+
+    assert store.get("orgs/orgA/members", "orgA/alice") is None
+    assert store.get("orgs/orgB/members", "orgB/alice") is not None

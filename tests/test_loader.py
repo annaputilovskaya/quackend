@@ -5,12 +5,14 @@ import pytest
 
 from quackend.loader import (
     Route,
+    is_templated,
     iter_operations,
     iter_success_responses,
     load_openapi,
     operation_response_schema,
     parse_route,
     path_resource,
+    resolve_resource,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -261,3 +263,23 @@ def test_iter_operations_range_only_reports_200_and_a_list() -> None:
     assert operation.ok_status == 200
     assert operation.is_list is True
     assert operation.item_schema == {"type": "object"}
+
+
+def test_is_templated_reports_a_resource_that_still_holds_a_parameter() -> None:
+    assert is_templated("monitors/{monitor_id}/uptime") is True
+    assert is_templated("monitors/xyz/uptime") is False
+
+
+def test_resolve_resource_substitutes_only_the_supplied_parameters() -> None:
+    route = parse_route("/orgs/{org_id}/members/{member_id}")
+    nested = parse_route("/monitors/{monitor_id}/uptime")
+
+    resolved = resolve_resource(route, {"org_id": "orgA", "member_id": "alice"})
+    bound = resolve_resource(nested, {"monitor_id": "xyz"})
+    partial = resolve_resource(nested, {})
+
+    assert resolved == "orgs/orgA/members"
+    assert bound == "monitors/xyz/uptime"
+    # A parameter the request does not supply stays literal, so an unresolved key
+    # is still recognisable as a template instead of silently losing a segment.
+    assert partial == "monitors/{monitor_id}/uptime"
