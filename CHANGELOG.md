@@ -31,6 +31,11 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   no longer changes what it stored. **Breaking**: a caller that relied on
   identity (`store.get(...) is store.get(...)`, or editing the store through a
   returned item) has to work on copies instead.
+- `store.create` never reuses an id: deleting the highest id of a seeded
+  collection and creating again now numbers the new item after it instead of
+  filling the gap, so a client that already saw that id does not resolve to a
+  different object. **Breaking**: the ids of a collection are not contiguous any
+  more after a delete; code that assumed a collection is `1..N` has to count.
 - An operation whose only success response is the `2XX` range serves generated
   data for its declared schema instead of `[]`, and both the status and the
   schema are now read through one parser, so they can no longer disagree.

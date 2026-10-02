@@ -313,3 +313,33 @@ def test_update_copies_the_payload_and_returns_a_detached_copy() -> None:
     stored = store.get("widgets", "1")
     assert stored is not None
     assert stored["tags"] == ["submitted"]
+
+
+def test_create_after_deleting_the_highest_id_does_not_reuse_it() -> None:
+    store = QuackStore()
+    store.ensure("users", USER_SCHEMA)
+    store.delete("users", str(COLLECTION_SIZE))
+
+    created = store.create("users", {"name": "Bob"})
+
+    assert created["id"] == str(COLLECTION_SIZE + 1)
+
+
+def test_create_after_deleting_every_id_does_not_restart_the_counter() -> None:
+    store = QuackStore()
+    store.ensure("users", USER_SCHEMA)
+    for position in range(1, COLLECTION_SIZE + 1):
+        store.delete("users", str(position))
+
+    created = store.create("users", {"name": "Bob"})
+
+    assert created["id"] == str(COLLECTION_SIZE + 1)
+
+
+def test_created_ids_are_unique_within_a_seeded_collection() -> None:
+    store = QuackStore()
+    store.ensure("users", USER_SCHEMA)
+
+    created = [store.create("users", {"name": name})["id"] for name in ("Ann", "Bo", "Cy")]
+
+    assert len(set(created)) == 3

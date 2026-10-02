@@ -151,7 +151,7 @@ class QuackStore:
         """
         self._fake = fake if fake is not None else Faker()
         self._collections: dict[str, dict[str, dict[str, Any]]] = {}
-        self._schemas: dict[str, Mapping[str, Any]] = {}
+        self._counters: dict[str, int] = {}
 
     def set_seed(self, seed: int | None) -> None:
         """Seed the internal Faker for deterministic generation.
@@ -188,7 +188,7 @@ class QuackStore:
             item["id"] = str(i)
             items[str(i)] = item
         self._collections[resource] = items
-        self._schemas[resource] = schema
+        self._counters[resource] = COLLECTION_SIZE
 
     def get(self, resource: str, key: str) -> dict[str, Any] | None:
         """Return one item by key, or None when absent.
@@ -261,9 +261,25 @@ class QuackStore:
         return copy.deepcopy(list((self._collections.get(resource) or {}).values()))
 
     def _next_key(self, resource: str) -> str:
+        """Assign the next key of a collection without ever repeating one.
+
+        The counter and the highest key still present are read together and the
+        higher of the two wins, because a seeded or already created id can be
+        deleted and is then gone from the collection while a client has already
+        seen it. The counter is written back in the same step, so both halves stay
+        in step even when no ``create`` followed an ``ensure``.
+
+        Args:
+            resource: the collection name.
+
+        Returns:
+            A key one past every key the collection has ever handed out.
+        """
         existing = (self._collections.get(resource) or {}).keys()
         numbers = [int(k) for k in existing if k.isdigit()]
-        return str(max(numbers, default=0) + 1)
+        key = max(self._counters.get(resource, 0), max(numbers, default=0)) + 1
+        self._counters[resource] = key
+        return str(key)
 
     def create(self, resource: str, data: Mapping[str, Any]) -> dict[str, Any]:
         """Create and store a new item under the next free key.
