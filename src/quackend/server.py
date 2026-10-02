@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from quackend.loader import (
     Operation,
+    UnsupportedOperationError,
     is_templated,
     iter_operations,
     parse_route,
@@ -170,6 +171,83 @@ async def _handle_delete(
     return _ok_response({"deleted": key}, operation.ok_status)
 
 
+def _served_methods(request: Request) -> set[str]:
+    """Return the verbs this app registers for the requested path.
+
+    Args:
+        request: the incoming request.
+
+    Returns:
+        The lowercased methods of every registered route serving that exact path.
+    """
+    return {
+        method.lower()
+        for route in request.app.routes
+        if getattr(route, "path", None) == request.url.path
+        for method in getattr(route, "methods", ())
+    }
+
+
+async def _handle_head(
+    operation: Operation,
+    store: StoreProtocol,
+    request: Request,
+    warn: Callable[[str], None],
+) -> Response:
+    """Answer a declared HEAD with what its own declared success answers.
+
+    The body is dropped because a server must not answer a HEAD with one, and so is
+    the content length, which belongs to a body that is never sent. The GET handler
+    reads nothing of the verb, so the HEAD operation is served on its own and no
+    declared GET is required.
+
+    Args:
+        operation: the HEAD operation the request matched.
+        store: the store backing the app.
+        request: the incoming request.
+        warn: the callback receiving generator warnings.
+
+    Returns:
+        The status and headers of the GET answer, with an empty body.
+    """
+    response = await _handle_get(operation, store, request, warn)
+    headers = {
+        name: value for name, value in response.headers.items() if name.lower() != "content-length"
+    }
+    head = Response(status_code=response.status_code, headers=headers)
+    # Starlette fills a missing length in from the empty body, which is a claim
+    # about a payload this route does not send.
+    del head.headers["content-length"]
+    return head
+
+
+async def _handle_options(
+    operation: Operation,
+    store: StoreProtocol,
+    request: Request,
+    warn: Callable[[str], None],
+) -> Response:
+    """Answer a declared OPTIONS with the methods this app serves for the path.
+
+    The operation and the store are ignored: OPTIONS answers about the path as a
+    whole rather than about one operation of it. The handler keeps the signature
+    every other verb shares so that the verb table stays one table.
+
+    Args:
+        operation: the OPTIONS operation the request matched; unused.
+        store: the store backing the app; unused.
+        request: the incoming request.
+        warn: the callback receiving generator warnings; unused.
+
+    Returns:
+        A 204 response whose Allow header lists the served methods, ordered by the
+        verb table rather than by the registration order of the routes.
+    """
+    served = _served_methods(request)
+    allowed = [verb.upper() for verb in _VERBS if verb in served]
+    return Response(status_code=204, headers={"allow": ", ".join(allowed)})
+
+
 def _bind_resource(
     operation: Operation,
     store: StoreProtocol,
@@ -205,6 +283,8 @@ _VERBS: dict[str, _Handler] = {
     "put": _handle_update,
     "patch": _handle_update,
     "delete": _handle_delete,
+    "head": _handle_head,
+    "options": _handle_options,
 }
 
 
@@ -241,6 +321,10 @@ def build_app(
 
     Returns:
         A configured FastAPI application.
+
+    Raises:
+        UnsupportedOperationError: if the spec declares a verb the mock refuses
+            to answer rather than drop it silently.
     """
     resolved_store = store if store is not None else QuackStore()
     emit = warn if warn is not None else _null_warn
@@ -264,7 +348,9 @@ def build_app(
     for operation in operations:
         handler = _VERBS.get(operation.method)
         if handler is None:
-            continue
+            raise UnsupportedOperationError(
+                f"quackend cannot mock {operation.method.upper()} declared at {operation.path}"
+            )
         app.add_api_route(
             operation.path,
             _endpoint(handler, operation, resolved_store, emit),

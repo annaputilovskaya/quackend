@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from quackend.loader import load_openapi
+from quackend.loader import UnsupportedOperationError, load_openapi
 from quackend.server import build_app
 from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
 
@@ -949,3 +949,79 @@ def test_nested_delete_removes_the_member_of_the_addressed_parent_only() -> None
 
     assert store.get("orgs/orgA/members", "orgA/alice") is None
     assert store.get("orgs/orgB/members", "orgB/alice") is not None
+
+
+def make_head_only_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "head", "version": "1.0.0"},
+        "paths": {
+            "/probe": {
+                "head": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"name": {"type": "string"}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_declared_head_answers_its_own_status_with_no_body() -> None:
+    # No declared GET on this path: the HEAD operation is answered on its own, so
+    # the mock serves what the spec declares rather than implying a GET.
+    client = TestClient(build_app(make_head_only_spec()))
+
+    response = client.head("/probe")
+
+    assert response.status_code == 200
+    assert response.content == b""
+    assert response.headers["content-type"] == "application/json"
+
+
+def make_options_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "options", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "options": {"responses": {"204": {"description": "no content"}}},
+            }
+        },
+    }
+
+
+def test_declared_options_answers_allow_for_the_path() -> None:
+    client = TestClient(build_app(make_options_spec()))
+
+    response = client.options("/items")
+
+    assert response.status_code == 204
+    assert response.headers["allow"] == "GET, OPTIONS"
+
+
+def make_trace_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "trace", "version": "1.0.0"},
+        "paths": {"/items": {"trace": {"responses": {"200": {"description": "ok"}}}}},
+    }
+
+
+def test_declared_trace_refuses_to_build() -> None:
+    with pytest.raises(UnsupportedOperationError) as raised:
+        build_app(make_trace_spec())
+
+    assert "TRACE" in str(raised.value)
+    assert "/items" in str(raised.value)

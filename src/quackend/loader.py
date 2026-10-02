@@ -13,6 +13,7 @@ import prance
 __all__ = [
     "Operation",
     "Route",
+    "UnsupportedOperationError",
     "is_templated",
     "iter_operations",
     "iter_success_responses",
@@ -25,7 +26,25 @@ __all__ = [
 
 _PARAM_PATTERN = re.compile(r"\{(\w+)\}")
 _RANGE_PATTERN = re.compile(r"\d[xX]{2}")
-_METHODS: tuple[str, ...] = ("get", "post", "put", "delete", "patch")
+_METHODS: tuple[str, ...] = (
+    "get",
+    "post",
+    "put",
+    "delete",
+    "patch",
+    "head",
+    "options",
+    "trace",
+)
+
+
+class UnsupportedOperationError(ValueError):
+    """A spec declares an operation the mock refuses to serve.
+
+    The loader owns which verbs a Path Item may declare, so the error naming a
+    verb with no honest mock lives next to the table of verbs it knows. It is a
+    ``ValueError`` because it reports a spec that cannot be served as it stands.
+    """
 
 
 def load_openapi(source: str | Path) -> dict[str, Any]:
@@ -184,7 +203,7 @@ def iter_success_responses(
 
 
 def iter_operations(spec: Mapping[str, Any]) -> Iterator[Operation]:
-    """Yield every supported operation declared in a spec, fully resolved.
+    """Yield every operation a Path Item declares, fully resolved.
 
     Args:
         spec: a resolved OpenAPI spec.

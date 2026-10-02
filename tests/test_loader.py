@@ -283,3 +283,20 @@ def test_resolve_resource_substitutes_only_the_supplied_parameters() -> None:
     # A parameter the request does not supply stays literal, so an unresolved key
     # is still recognisable as a template instead of silently losing a segment.
     assert partial == "monitors/{monitor_id}/uptime"
+
+
+def test_iter_operations_yields_every_verb_the_path_declares() -> None:
+    spec = {
+        "paths": {
+            "/items": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "head": {"responses": {"200": {"description": "ok"}}},
+                "options": {"responses": {"204": {"description": "no content"}}},
+                "trace": {"responses": {"200": {"description": "ok"}}},
+            }
+        }
+    }
+
+    methods = [op.method for op in iter_operations(spec)]
+
+    assert methods == ["get", "head", "options", "trace"]
