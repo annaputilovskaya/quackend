@@ -68,7 +68,7 @@ def _load_or_exit(spec: str) -> dict[str, Any]:
 @app.command()
 def start(
     spec: str,
-    port: int = typer.Option(8000, "--port"),
+    port: int = typer.Option(8000, "--port", min=1, max=65535),
     host: str = typer.Option("127.0.0.1", "--host"),
     latency: int = typer.Option(0, "--latency"),
     fail_rate: float = typer.Option(0.0, "--fail-rate", min=0.0, max=1.0),
