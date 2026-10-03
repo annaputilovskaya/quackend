@@ -65,6 +65,10 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
         OSError: the path is a directory, unreadable, or otherwise unusable.
             ``PermissionError`` and ``IsADirectoryError`` are ``OSError``s, and
             which one is raised depends on the platform.
+        AttributeError: the document parses to something that is not a mapping,
+            such as an empty file or a bare scalar; prance dereferences it as
+            one. A file of raw bytes lands here too, since the parsed result
+            is ``None``.
     """
     parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
     spec: dict[str, Any] = parser.specification

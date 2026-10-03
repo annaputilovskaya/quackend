@@ -310,6 +310,7 @@ def test_iter_operations_yields_every_verb_the_path_declares() -> None:
         ("malformed", "prance.util.formats.ParseError"),
         ("invalid", "prance.ValidationError"),
         ("directory", ("builtins.PermissionError", "builtins.IsADirectoryError")),
+        ("empty", "builtins.AttributeError"),
     ],
 )
 def test_load_openapi_reports_the_documented_failure_family(
@@ -320,13 +321,17 @@ def test_load_openapi_reports_the_documented_failure_family(
         "malformed": tmp_path / "broken.yaml",
         "invalid": tmp_path / "invalid.yaml",
         "directory": tmp_path,
+        "empty": tmp_path / "empty.yaml",
     }
+    sources["empty"].touch()
     sources["malformed"].write_text("openapi: 3.0.0\npaths: [\n  - not yaml", encoding="utf-8")
     sources["invalid"].write_text(
         'openapi: 3.0.0\ninfo:\n  version: "1.0"\npaths: {}\n', encoding="utf-8"
     )
 
-    with pytest.raises((LookupError, ValueError, OSError, prance.ValidationError)) as info:
+    with pytest.raises(
+        (LookupError, ValueError, OSError, AttributeError, prance.ValidationError)
+    ) as info:
         load_openapi(sources[case])
 
     actual = type(info.value)

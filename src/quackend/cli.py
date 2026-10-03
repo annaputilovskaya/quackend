@@ -77,8 +77,8 @@ def start(
 ) -> None:
     """Start the mock server for an OpenAPI spec.
 
-    Loads the spec, seeds the store, prints the route table, and serves
-    generated mock responses until interrupted. All parameters except
+    Loads the spec, seeds the store, prints the route table unless quiet, and
+    serves generated mock responses until interrupted. All parameters except
     spec are command-line options that tune the simulation.
 
     Args:
