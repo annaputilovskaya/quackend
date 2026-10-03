@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 import uvicorn
 from rich.console import Console
@@ -41,6 +43,28 @@ def routes(spec: str) -> None:
     console.print(render_route_table(load_openapi(spec)))
 
 
+def _load_or_exit(spec: str) -> dict[str, Any]:
+    """Load a spec, reporting any failure as a CLI error instead of a traceback.
+
+    Args:
+        spec: path or URL of the OpenAPI spec.
+
+    Returns:
+        The fully resolved specification.
+
+    Raises:
+        typer.Exit: with code 2, after one line naming the reason has gone to stderr.
+    """
+    try:
+        return load_openapi(spec)
+    except Exception as exc:
+        typer.echo(
+            f"quackend: cannot load spec {spec!r}: {type(exc).__name__}: {exc}",
+            err=True,
+        )
+        raise typer.Exit(code=2) from exc
+
+
 @app.command()
 def start(
     spec: str,
@@ -66,7 +90,7 @@ def start(
         seed: random seed for reproducible generated data; unset means random.
         quiet: when True, suppress banner output and reduce uvicorn logging.
     """
-    spec_data = load_openapi(spec)
+    spec_data = _load_or_exit(spec)
     store = QuackStore()
     store.set_seed(seed)
     if not quiet:

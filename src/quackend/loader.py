@@ -57,7 +57,14 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
         The fully resolved spec as a plain dict.
 
     Raises:
-        prance.ValidationError: if the spec is invalid or cannot be loaded.
+        prance.ValidationError: the document is not a valid OpenAPI spec.
+        prance.util.url.ResolutionError: the file or URL cannot be resolved.
+            A ``LookupError``.
+        prance.util.formats.ParseError: the document is not parsable YAML or
+            JSON. A ``ValueError``.
+        OSError: the path is a directory, unreadable, or otherwise unusable.
+            ``PermissionError`` and ``IsADirectoryError`` are ``OSError``s, and
+            which one is raised depends on the platform.
     """
     parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
     spec: dict[str, Any] = parser.specification

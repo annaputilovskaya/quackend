@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 
+import prance
 import pytest
 
 from quackend.loader import (
@@ -300,3 +301,34 @@ def test_iter_operations_yields_every_verb_the_path_declares() -> None:
     methods = [op.method for op in iter_operations(spec)]
 
     assert methods == ["get", "head", "options", "trace"]
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("missing", "prance.util.url.ResolutionError"),
+        ("malformed", "prance.util.formats.ParseError"),
+        ("invalid", "prance.ValidationError"),
+        ("directory", ("builtins.PermissionError", "builtins.IsADirectoryError")),
+    ],
+)
+def test_load_openapi_reports_the_documented_failure_family(
+    tmp_path: Path, case: str, expected: str | tuple[str, ...]
+) -> None:
+    sources: dict[str, Path] = {
+        "missing": tmp_path / "absent.yaml",
+        "malformed": tmp_path / "broken.yaml",
+        "invalid": tmp_path / "invalid.yaml",
+        "directory": tmp_path,
+    }
+    sources["malformed"].write_text("openapi: 3.0.0\npaths: [\n  - not yaml", encoding="utf-8")
+    sources["invalid"].write_text(
+        'openapi: 3.0.0\ninfo:\n  version: "1.0"\npaths: {}\n', encoding="utf-8"
+    )
+
+    with pytest.raises((LookupError, ValueError, OSError, prance.ValidationError)) as info:
+        load_openapi(sources[case])
+
+    actual = type(info.value)
+    qualified = f"{actual.__module__}.{actual.__name__}"
+    assert qualified in (expected if isinstance(expected, tuple) else (expected,))

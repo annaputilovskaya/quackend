@@ -133,3 +133,26 @@ def test_emit_warning_escapes_rich_markup(capsys: pytest.CaptureFixture[str]) ->
     cli_module._emit_warning("unsupported type '[/]'")
 
     assert "[/]" in _strip_ansi(capsys.readouterr().out)
+
+
+def _broken_specs(tmp_path: Path) -> dict[str, Path]:
+    malformed = tmp_path / "malformed.yaml"
+    malformed.write_text("openapi: 3.0.0\npaths: [\n  - not yaml", encoding="utf-8")
+    invalid = tmp_path / "invalid.yaml"
+    invalid.write_text('openapi: 3.0.0\ninfo:\n  version: "1.0"\npaths: {}\n', encoding="utf-8")
+    return {
+        "missing": tmp_path / "absent.yaml",
+        "malformed": malformed,
+        "invalid": invalid,
+        "directory": tmp_path,
+    }
+
+
+@pytest.mark.parametrize("case", ["missing", "malformed", "invalid", "directory"])
+def test_start_with_an_unusable_spec_exits_with_one_line(tmp_path: Path, case: str) -> None:
+    result = runner.invoke(app, ["start", str(_broken_specs(tmp_path)[case])])
+
+    assert result.exit_code == 2
+    assert "Traceback" not in result.output
+    assert result.stderr.strip().startswith("quackend: cannot load spec")
+    assert len(result.stderr.strip().splitlines()) == 1
