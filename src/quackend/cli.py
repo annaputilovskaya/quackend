@@ -40,7 +40,7 @@ def routes(spec: str) -> None:
     Args:
         spec: path or URL of the OpenAPI spec.
     """
-    console.print(render_route_table(load_openapi(spec)))
+    console.print(render_route_table(_load_or_exit(spec)))
 
 
 def _load_or_exit(spec: str) -> dict[str, Any]:

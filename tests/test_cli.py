@@ -148,9 +148,10 @@ def _broken_specs(tmp_path: Path) -> dict[str, Path]:
     }
 
 
+@pytest.mark.parametrize("command", ["start", "routes"])
 @pytest.mark.parametrize("case", ["missing", "malformed", "invalid", "directory"])
-def test_start_with_an_unusable_spec_exits_with_one_line(tmp_path: Path, case: str) -> None:
-    result = runner.invoke(app, ["start", str(_broken_specs(tmp_path)[case])])
+def test_with_an_unusable_spec_exits_with_one_line(tmp_path: Path, command: str, case: str) -> None:
+    result = runner.invoke(app, [command, str(_broken_specs(tmp_path)[case])])
 
     assert result.exit_code == 2
     assert "Traceback" not in result.output
