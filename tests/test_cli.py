@@ -195,3 +195,17 @@ def test_start_rejects_a_port_outside_the_tcp_range(
 
     assert result.exit_code == 2
     assert served == []
+
+
+@pytest.mark.parametrize("port", [1, 65535])
+def test_start_accepts_the_endpoints_of_the_tcp_range(
+    monkeypatch: pytest.MonkeyPatch, port: int
+) -> None:
+    served: list[object] = []
+    _patch_start(monkeypatch)
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: served.append(kwargs.get("port")))
+
+    result = runner.invoke(app, ["start", "spec.yaml", "--port", str(port)])
+
+    assert result.exit_code == 0
+    assert served == [port]
