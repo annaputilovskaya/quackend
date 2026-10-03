@@ -18,8 +18,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "faker>=24",
-  ]
-
+]
 
 [project.optional-dependencies]
 dev = [
