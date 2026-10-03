@@ -100,6 +100,35 @@ def test_start_swallows_warnings_when_quiet(monkeypatch: pytest.MonkeyPatch) -> 
     assert "weird-unknown-type" not in result.stdout
 
 
+def _patch_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "probe", "version": "1"},
+        "paths": {"/users": {"get": {"responses": {"200": {"content": {}}}}}},
+    }
+    monkeypatch.setattr(cli_module, "load_openapi", lambda _: spec)
+    monkeypatch.setattr(cli_module, "build_app", lambda *args, **kwargs: object())
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: None)
+
+
+def test_start_quiet_omits_the_route_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_start(monkeypatch)
+
+    result = runner.invoke(app, ["start", "spec.yaml", "--quiet"])
+
+    assert result.exit_code == 0
+    assert "/users" not in _strip_ansi(result.stdout)
+
+
+def test_start_prints_the_route_table_without_quiet(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_start(monkeypatch)
+
+    result = runner.invoke(app, ["start", "spec.yaml"])
+
+    assert result.exit_code == 0
+    assert "/users" in _strip_ansi(result.stdout)
+
+
 def test_emit_warning_escapes_rich_markup(capsys: pytest.CaptureFixture[str]) -> None:
     cli_module._emit_warning("unsupported type '[/]'")
 

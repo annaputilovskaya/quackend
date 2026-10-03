@@ -34,6 +34,8 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Fixed
 
+- `quackend start --quiet` no longer prints the route table. The flag promised to
+  suppress banner output, and the table was printed on every start.
 - Every value that crosses the store boundary is a deep copy: mutating an item,
   a list or a nested value that came out of `store` no longer changes what the
   store holds, and mutating a payload passed to `store.create` or `store.update`

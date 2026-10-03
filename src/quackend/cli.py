@@ -69,8 +69,8 @@ def start(
     spec_data = load_openapi(spec)
     store = QuackStore()
     store.set_seed(seed)
-    console.print(render_route_table(spec_data))
     if not quiet:
+        console.print(render_route_table(spec_data))
         typer.echo(f"quackend v{__version__}")
     app_obj = build_app(
         spec_data,
