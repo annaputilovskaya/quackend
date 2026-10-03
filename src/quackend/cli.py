@@ -104,7 +104,7 @@ def start(
         warn=None if quiet else _emit_warning,
     )
     if not quiet:
-        typer.echo(f"Quack! Your mock server is running on {host}:{port}")
+        typer.echo(f"Starting quackend on http://{host}:{port} (Ctrl+C to stop)")
     uvicorn.run(app_obj, host=host, port=port, log_level="warning" if quiet else "info")
 
 

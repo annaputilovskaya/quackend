@@ -157,3 +157,27 @@ def test_with_an_unusable_spec_exits_with_one_line(tmp_path: Path, command: str,
     assert "Traceback" not in result.output
     assert result.stderr.strip().startswith("quackend: cannot load spec")
     assert len(result.stderr.strip().splitlines()) == 1
+
+
+def test_start_announces_the_address_before_it_serves(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_start(monkeypatch)
+
+    def refuse_to_serve(app: object, **kwargs: object) -> None:
+        raise RuntimeError("the serve call is where the banner would have to follow")
+
+    monkeypatch.setattr(uvicorn, "run", refuse_to_serve)
+
+    result = runner.invoke(app, ["start", "spec.yaml", "--port", "9123"])
+
+    assert "Starting quackend on http://127.0.0.1:9123 (Ctrl+C to stop)" in _strip_ansi(
+        result.stdout
+    )
+
+
+def test_start_quiet_prints_no_banner(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_start(monkeypatch)
+
+    result = runner.invoke(app, ["start", "spec.yaml", "--quiet", "--port", "9123"])
+
+    assert result.exit_code == 0
+    assert "Starting quackend" not in result.stdout

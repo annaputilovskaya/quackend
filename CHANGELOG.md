@@ -34,6 +34,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Fixed
 
+- The startup banner now reads `Starting quackend on http://<host>:<port>
+  (Ctrl+C to stop)`. It used to claim the mock server "is running" before
+  `uvicorn.run` had bound anything, and it omitted the URL scheme.
 - An unusable spec now exits with code 2 and a single stderr line naming the
   reason, instead of a Rich traceback naming an absolute path. `loader.load_openapi`
   now documents every failure family it can raise, not only `ValidationError`.
