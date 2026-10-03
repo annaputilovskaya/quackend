@@ -22,7 +22,7 @@ pip install quackend
 
 ```bash
 quackend start ./swagger.yaml
-# Quack! Your mock server is running on 127.0.0.1:8000
+# Starting quackend on http://127.0.0.1:8000 (Ctrl+C to stop)
 ```
 
 ```bash
