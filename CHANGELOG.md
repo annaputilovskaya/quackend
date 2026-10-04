@@ -40,9 +40,14 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - `--port` now rejects values outside `1..65535` with exit code 2. Previously
   `--port 99999` was accepted and only failed later with an `OverflowError`
   traceback from `bind()`.
+- **Breaking**: `loader.load_openapi` now raises `loader.SpecLoadError` for every
+  failure instead of leaking `prance`, `ruamel.yaml` and `OSError` families.
+  Callers catching `prance.ValidationError` must catch `SpecLoadError`; the
+  original exception is available as `__cause__`.
 - An unusable spec now exits with code 2 and a single stderr line naming the
-  reason, instead of a Rich traceback naming an absolute path. `loader.load_openapi`
-  now documents every failure family it can raise, not only `ValidationError`.
+  reason, instead of a Rich traceback. `loader.load_openapi` now raises one
+  `loader.SpecLoadError` for every failure instead of leaking `prance`,
+  `ruamel.yaml` and `OSError` families.
 - `quackend start --quiet` no longer prints the route table. The flag promised to
   suppress banner output, and the table was printed on every start.
 - Every value that crosses the store boundary is a deep copy: mutating an item,

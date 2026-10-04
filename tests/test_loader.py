@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Any
 
-import prance
 import pytest
 
 from quackend.loader import (
     Route,
+    SpecLoadError,
     is_templated,
     iter_operations,
     iter_success_responses,
@@ -304,36 +304,43 @@ def test_iter_operations_yields_every_verb_the_path_declares() -> None:
 
 
 @pytest.mark.parametrize(
-    ("case", "expected"),
+    "case",
     [
-        ("missing", "prance.util.url.ResolutionError"),
-        ("malformed", "prance.util.formats.ParseError"),
-        ("invalid", "prance.ValidationError"),
-        ("directory", ("builtins.PermissionError", "builtins.IsADirectoryError")),
-        ("empty", "builtins.AttributeError"),
+        "missing",
+        "malformed",
+        "invalid",
+        "directory",
+        "empty",
+        "mapping",
+        "sequence",
+        "tab",
+        "multi_doc",
+        "dup_key",
     ],
 )
-def test_load_openapi_reports_the_documented_failure_family(
-    tmp_path: Path, case: str, expected: str | tuple[str, ...]
-) -> None:
+def test_load_openapi_reports_one_failure_family(tmp_path: Path, case: str) -> None:
     sources: dict[str, Path] = {
         "missing": tmp_path / "absent.yaml",
         "malformed": tmp_path / "broken.yaml",
         "invalid": tmp_path / "invalid.yaml",
         "directory": tmp_path,
         "empty": tmp_path / "empty.yaml",
+        "mapping": tmp_path / "mapping.json",
+        "sequence": tmp_path / "sequence.json",
+        "tab": tmp_path / "tab.yaml",
+        "multi_doc": tmp_path / "multi.yaml",
+        "dup_key": tmp_path / "dup.yaml",
     }
     sources["empty"].touch()
     sources["malformed"].write_text("openapi: 3.0.0\npaths: [\n  - not yaml", encoding="utf-8")
     sources["invalid"].write_text(
         'openapi: 3.0.0\ninfo:\n  version: "1.0"\npaths: {}\n', encoding="utf-8"
     )
+    sources["mapping"].write_text("{}", encoding="utf-8")
+    sources["sequence"].write_text("[]", encoding="utf-8")
+    sources["tab"].write_text("paths:\n\t- a\n", encoding="utf-8")
+    sources["multi_doc"].write_text("openapi: 3.0.0\n---\nopenapi: 3.0.0\n", encoding="utf-8")
+    sources["dup_key"].write_text("openapi: 3.0.0\nopenapi: 3.0.0\n", encoding="utf-8")
 
-    with pytest.raises(
-        (LookupError, ValueError, OSError, AttributeError, prance.ValidationError)
-    ) as info:
+    with pytest.raises(SpecLoadError):
         load_openapi(sources[case])
-
-    actual = type(info.value)
-    qualified = f"{actual.__module__}.{actual.__name__}"
-    assert qualified in (expected if isinstance(expected, tuple) else (expected,))

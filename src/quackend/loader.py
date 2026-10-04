@@ -13,6 +13,7 @@ import prance
 __all__ = [
     "Operation",
     "Route",
+    "SpecLoadError",
     "UnsupportedOperationError",
     "is_templated",
     "iter_operations",
@@ -47,6 +48,15 @@ class UnsupportedOperationError(ValueError):
     """
 
 
+class SpecLoadError(Exception):
+    """A spec could not be read, parsed, resolved or validated.
+
+    Wraps every failure from the spec toolchain so callers can catch one type
+    instead of enumerating exception families that change between upstream
+    releases. The underlying vendor exception is attached as ``__cause__``.
+    """
+
+
 def load_openapi(source: str | Path) -> dict[str, Any]:
     """Parse an OpenAPI v3 or Swagger v2 spec and resolve all $refs.
 
@@ -57,21 +67,16 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
         The fully resolved spec as a plain dict.
 
     Raises:
-        prance.ValidationError: the document is not a valid OpenAPI spec.
-        prance.util.url.ResolutionError: the file or URL cannot be resolved.
-            A ``LookupError``.
-        prance.util.formats.ParseError: the document is not parsable YAML or
-            JSON. A ``ValueError``.
-        OSError: the path is a directory, unreadable, or otherwise unusable.
-            ``PermissionError`` and ``IsADirectoryError`` are ``OSError``s, and
-            which one is raised depends on the platform.
-        AttributeError: the document parses to something that is not a mapping,
-            such as an empty file or a bare scalar; prance dereferences it as
-            one. A file of raw bytes lands here too, since the parsed result
-            is ``None``.
+        SpecLoadError: the source cannot be read, parsed, resolved or
+            validated. The underlying cause is prance, ruamel.yaml,
+            openapi-spec-validator or the filesystem, and is attached as
+            ``__cause__``.
     """
-    parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
-    spec: dict[str, Any] = parser.specification
+    try:
+        parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
+        spec: dict[str, Any] = parser.specification
+    except Exception as exc:
+        raise SpecLoadError(str(exc)) from exc
     return spec
 
 
