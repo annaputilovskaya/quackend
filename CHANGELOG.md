@@ -45,9 +45,7 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   Callers catching `prance.ValidationError` must catch `SpecLoadError`; the
   original exception is available as `__cause__`.
 - An unusable spec now exits with code 2 and a single stderr line naming the
-  reason, instead of a Rich traceback. `loader.load_openapi` now raises one
-  `loader.SpecLoadError` for every failure instead of leaking `prance`,
-  `ruamel.yaml` and `OSError` families.
+  reason, instead of a Rich traceback.
 - `quackend start --quiet` no longer prints the route table. The flag promised to
   suppress banner output, and the table was printed on every start.
 - Every value that crosses the store boundary is a deep copy: mutating an item,

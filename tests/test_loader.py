@@ -342,5 +342,12 @@ def test_load_openapi_reports_one_failure_family(tmp_path: Path, case: str) -> N
     sources["multi_doc"].write_text("openapi: 3.0.0\n---\nopenapi: 3.0.0\n", encoding="utf-8")
     sources["dup_key"].write_text("openapi: 3.0.0\nopenapi: 3.0.0\n", encoding="utf-8")
 
-    with pytest.raises(SpecLoadError):
+    with pytest.raises(SpecLoadError) as info:
         load_openapi(sources[case])
+
+    assert type(info.value.__cause__).__module__.split(".")[0] in {
+        "prance",
+        "ruamel",
+        "builtins",
+    }
+    assert type(info.value.__cause__).__name__ in str(info.value)

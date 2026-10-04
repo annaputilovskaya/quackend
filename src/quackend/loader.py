@@ -76,7 +76,7 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
         parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
         spec: dict[str, Any] = parser.specification
     except Exception as exc:
-        raise SpecLoadError(str(exc)) from exc
+        raise SpecLoadError(f"{type(exc).__name__}: {exc}") from exc
     return spec
 
 
