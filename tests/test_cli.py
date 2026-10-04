@@ -140,16 +140,19 @@ def _broken_specs(tmp_path: Path) -> dict[str, Path]:
     malformed.write_text("openapi: 3.0.0\npaths: [\n  - not yaml", encoding="utf-8")
     invalid = tmp_path / "invalid.yaml"
     invalid.write_text('openapi: 3.0.0\ninfo:\n  version: "1.0"\npaths: {}\n', encoding="utf-8")
+    tab = tmp_path / "tab.yaml"
+    tab.write_text("paths:\n\t- a\n", encoding="utf-8")
     return {
         "missing": tmp_path / "absent.yaml",
         "malformed": malformed,
         "invalid": invalid,
         "directory": tmp_path,
+        "tab": tab,
     }
 
 
 @pytest.mark.parametrize("command", ["start", "routes"])
-@pytest.mark.parametrize("case", ["missing", "malformed", "invalid", "directory"])
+@pytest.mark.parametrize("case", ["missing", "malformed", "invalid", "directory", "tab"])
 def test_with_an_unusable_spec_exits_with_one_line(tmp_path: Path, command: str, case: str) -> None:
     result = runner.invoke(app, [command, str(_broken_specs(tmp_path)[case])])
 
