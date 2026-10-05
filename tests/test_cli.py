@@ -162,6 +162,20 @@ def test_with_an_unusable_spec_exits_with_one_line(tmp_path: Path, command: str,
     assert len(result.stderr.strip().splitlines()) == 1
 
 
+def test_the_spec_load_failure_names_the_reason_once(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["routes", str(_broken_specs(tmp_path)["invalid"])])
+
+    stderr = result.stderr.strip()
+    prefix = "quackend: cannot load spec "
+    assert stderr.startswith(prefix)
+
+    reason = stderr[len(prefix) :].split("': ", 1)[1]
+
+    assert reason.strip()
+    assert reason.count("ValidationError") == 1
+    assert not reason.startswith("SpecLoadError: ")
+
+
 def test_start_announces_the_address_before_it_serves(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_start(monkeypatch)
 
