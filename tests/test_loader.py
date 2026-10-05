@@ -351,3 +351,4 @@ def test_load_openapi_reports_one_failure_family(tmp_path: Path, case: str) -> N
         "builtins",
     }
     assert type(info.value.__cause__).__name__ in str(info.value)
+    assert "\n" not in str(info.value)

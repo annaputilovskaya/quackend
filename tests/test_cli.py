@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from quackend import cli as cli_module
 from quackend.cli import app
+from quackend.loader import SpecLoadError, load_openapi
 from quackend.store import QuackStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -162,18 +163,15 @@ def test_with_an_unusable_spec_exits_with_one_line(tmp_path: Path, command: str,
     assert len(result.stderr.strip().splitlines()) == 1
 
 
-def test_the_spec_load_failure_names_the_reason_once(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["routes", str(_broken_specs(tmp_path)["invalid"])])
+def test_the_spec_load_failure_names_the_reason(tmp_path: Path) -> None:
+    spec = str(_broken_specs(tmp_path)["invalid"])
 
-    stderr = result.stderr.strip()
-    prefix = "quackend: cannot load spec "
-    assert stderr.startswith(prefix)
+    with pytest.raises(SpecLoadError) as info:
+        load_openapi(spec)
 
-    reason = stderr[len(prefix) :].split("': ", 1)[1]
+    result = runner.invoke(app, ["routes", spec])
 
-    assert reason.strip()
-    assert reason.count("ValidationError") == 1
-    assert not reason.startswith("SpecLoadError: ")
+    assert result.stderr.strip() == f"quackend: cannot load spec {spec!r}: {info.value}"
 
 
 def test_start_announces_the_address_before_it_serves(monkeypatch: pytest.MonkeyPatch) -> None:

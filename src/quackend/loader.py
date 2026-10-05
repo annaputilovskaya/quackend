@@ -53,7 +53,9 @@ class SpecLoadError(Exception):
 
     Wraps every failure from the spec toolchain so callers can catch one type
     instead of enumerating exception families that change between upstream
-    releases. The underlying vendor exception is attached as ``__cause__``.
+    releases. The message names the underlying exception class and is always a
+    single line, so a caller can print it without reformatting; the original
+    exception is attached as ``__cause__``.
     """
 
 
@@ -68,15 +70,17 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
 
     Raises:
         SpecLoadError: the source cannot be read, parsed, resolved or
-            validated. The underlying cause is prance, ruamel.yaml,
-            openapi-spec-validator or the filesystem, and is attached as
+            validated. The message names the underlying exception class and is
+            a single line. The original exception is prance, ruamel.yaml,
+            openapi-spec-validator or a filesystem error, and is attached as
             ``__cause__``.
     """
     try:
         parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
         spec: dict[str, Any] = parser.specification
     except Exception as exc:
-        raise SpecLoadError(f"{type(exc).__name__}: {exc}") from exc
+        detail = "; ".join(str(exc).splitlines())
+        raise SpecLoadError(f"{type(exc).__name__}: {detail}") from exc
     return spec
 
 

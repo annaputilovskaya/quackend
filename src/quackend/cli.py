@@ -58,10 +58,7 @@ def _load_or_exit(spec: str) -> dict[str, Any]:
     try:
         return load_openapi(spec)
     except Exception as exc:
-        typer.echo(
-            f"quackend: cannot load spec {spec!r}: {'; '.join(str(exc).splitlines())}",
-            err=True,
-        )
+        typer.echo(f"quackend: cannot load spec {spec!r}: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
 
