@@ -85,7 +85,8 @@ def start(
         latency: artificial delay in milliseconds applied to every request.
         fail_rate: probability in [0, 1] that a request fails with HTTP 500.
         seed: random seed for reproducible generated data; unset means random.
-        quiet: when True, suppress banner output and reduce uvicorn logging.
+        quiet: when True, suppress the route table and the startup banner, and
+            reduce uvicorn logging.
     """
     spec_data = _load_or_exit(spec)
     store = QuackStore()

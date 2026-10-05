@@ -22,8 +22,22 @@ pip install quackend
 
 ```bash
 quackend start ./swagger.yaml
-# Starting quackend on http://127.0.0.1:8000 (Ctrl+C to stop)
 ```
+
+```text
+      Routes
+┌────────┬────────┐
+│ Method │ Path   │
+├────────┼────────┤
+│ GET    │ /users │
+└────────┴────────┘
+quackend v0.1.0
+Starting quackend on http://127.0.0.1:8000 (Ctrl+C to stop)
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+```
+
+Таблица маршрутов, строка версии и баннер — это весь вывод `start` при старте;
+`--quiet` подавляет все три.
 
 ```bash
 quackend start ./swagger.yaml \
