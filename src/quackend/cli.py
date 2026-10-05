@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 import uvicorn
 from rich.console import Console
@@ -38,13 +40,32 @@ def routes(spec: str) -> None:
     Args:
         spec: path or URL of the OpenAPI spec.
     """
-    console.print(render_route_table(load_openapi(spec)))
+    console.print(render_route_table(_load_or_exit(spec)))
+
+
+def _load_or_exit(spec: str) -> dict[str, Any]:
+    """Load a spec, reporting any failure as a CLI error instead of a traceback.
+
+    Args:
+        spec: path or URL of the OpenAPI spec.
+
+    Returns:
+        The fully resolved specification.
+
+    Raises:
+        typer.Exit: with code 2, after one line naming the reason has gone to stderr.
+    """
+    try:
+        return load_openapi(spec)
+    except Exception as exc:
+        typer.echo(f"quackend: cannot load spec {spec!r}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
 
 
 @app.command()
 def start(
     spec: str,
-    port: int = typer.Option(8000, "--port"),
+    port: int = typer.Option(8000, "--port", min=1, max=65535),
     host: str = typer.Option("127.0.0.1", "--host"),
     latency: int = typer.Option(0, "--latency"),
     fail_rate: float = typer.Option(0.0, "--fail-rate", min=0.0, max=1.0),
@@ -53,8 +74,8 @@ def start(
 ) -> None:
     """Start the mock server for an OpenAPI spec.
 
-    Loads the spec, seeds the store, prints the route table, and serves
-    generated mock responses until interrupted. All parameters except
+    Loads the spec, seeds the store, prints the route table unless quiet, and
+    serves generated mock responses until interrupted. All parameters except
     spec are command-line options that tune the simulation.
 
     Args:
@@ -64,13 +85,14 @@ def start(
         latency: artificial delay in milliseconds applied to every request.
         fail_rate: probability in [0, 1] that a request fails with HTTP 500.
         seed: random seed for reproducible generated data; unset means random.
-        quiet: when True, suppress banner output and reduce uvicorn logging.
+        quiet: when True, suppress the route table and the startup banner, and
+            reduce uvicorn logging.
     """
-    spec_data = load_openapi(spec)
+    spec_data = _load_or_exit(spec)
     store = QuackStore()
     store.set_seed(seed)
-    console.print(render_route_table(spec_data))
     if not quiet:
+        console.print(render_route_table(spec_data))
         typer.echo(f"quackend v{__version__}")
     app_obj = build_app(
         spec_data,
@@ -80,7 +102,7 @@ def start(
         warn=None if quiet else _emit_warning,
     )
     if not quiet:
-        typer.echo(f"Quack! Your mock server is running on {host}:{port}")
+        typer.echo(f"Starting quackend on http://{host}:{port} (Ctrl+C to stop)")
     uvicorn.run(app_obj, host=host, port=port, log_level="warning" if quiet else "info")
 
 

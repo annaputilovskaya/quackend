@@ -13,6 +13,7 @@ import prance
 __all__ = [
     "Operation",
     "Route",
+    "SpecLoadError",
     "UnsupportedOperationError",
     "is_templated",
     "iter_operations",
@@ -47,6 +48,17 @@ class UnsupportedOperationError(ValueError):
     """
 
 
+class SpecLoadError(Exception):
+    """A spec could not be read, parsed, resolved or validated.
+
+    Wraps every failure from the spec toolchain so callers can catch one type
+    instead of enumerating exception families that change between upstream
+    releases. The message names the underlying exception class and is always a
+    single line, so a caller can print it without reformatting; the original
+    exception is attached as ``__cause__``.
+    """
+
+
 def load_openapi(source: str | Path) -> dict[str, Any]:
     """Parse an OpenAPI v3 or Swagger v2 spec and resolve all $refs.
 
@@ -57,10 +69,18 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
         The fully resolved spec as a plain dict.
 
     Raises:
-        prance.ValidationError: if the spec is invalid or cannot be loaded.
+        SpecLoadError: the source cannot be read, parsed, resolved or
+            validated. The message names the underlying exception class and is
+            a single line. The original exception is prance, ruamel.yaml,
+            openapi-spec-validator or a filesystem error, and is attached as
+            ``__cause__``.
     """
-    parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
-    spec: dict[str, Any] = parser.specification
+    try:
+        parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
+        spec: dict[str, Any] = parser.specification
+    except Exception as exc:
+        detail = "; ".join(str(exc).splitlines())
+        raise SpecLoadError(f"{type(exc).__name__}: {detail}") from exc
     return spec
 
 

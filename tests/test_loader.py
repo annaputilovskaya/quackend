@@ -5,6 +5,7 @@ import pytest
 
 from quackend.loader import (
     Route,
+    SpecLoadError,
     is_templated,
     iter_operations,
     iter_success_responses,
@@ -300,3 +301,54 @@ def test_iter_operations_yields_every_verb_the_path_declares() -> None:
     methods = [op.method for op in iter_operations(spec)]
 
     assert methods == ["get", "head", "options", "trace"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing",
+        "malformed",
+        "invalid",
+        "directory",
+        "empty",
+        "mapping",
+        "sequence",
+        "tab",
+        "multi_doc",
+        "dup_key",
+    ],
+)
+def test_load_openapi_reports_one_failure_family(tmp_path: Path, case: str) -> None:
+    sources: dict[str, Path] = {
+        "missing": tmp_path / "absent.yaml",
+        "malformed": tmp_path / "broken.yaml",
+        "invalid": tmp_path / "invalid.yaml",
+        "directory": tmp_path,
+        "empty": tmp_path / "empty.yaml",
+        "mapping": tmp_path / "mapping.json",
+        "sequence": tmp_path / "sequence.json",
+        "tab": tmp_path / "tab.yaml",
+        "multi_doc": tmp_path / "multi.yaml",
+        "dup_key": tmp_path / "dup.yaml",
+    }
+    sources["empty"].touch()
+    sources["malformed"].write_text("openapi: 3.0.0\npaths: [\n  - not yaml", encoding="utf-8")
+    sources["invalid"].write_text(
+        'openapi: 3.0.0\ninfo:\n  version: "1.0"\npaths: {}\n', encoding="utf-8"
+    )
+    sources["mapping"].write_text("{}", encoding="utf-8")
+    sources["sequence"].write_text("[]", encoding="utf-8")
+    sources["tab"].write_text("paths:\n\t- a\n", encoding="utf-8")
+    sources["multi_doc"].write_text("openapi: 3.0.0\n---\nopenapi: 3.0.0\n", encoding="utf-8")
+    sources["dup_key"].write_text("openapi: 3.0.0\nopenapi: 3.0.0\n", encoding="utf-8")
+
+    with pytest.raises(SpecLoadError) as info:
+        load_openapi(sources[case])
+
+    assert type(info.value.__cause__).__module__.split(".")[0] in {
+        "prance",
+        "ruamel",
+        "builtins",
+    }
+    assert type(info.value.__cause__).__name__ in str(info.value)
+    assert "\n" not in str(info.value)

@@ -31,9 +31,24 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - `store` exports `StoreProtocol`, the contract `build_app` depends on: any
   adapter can be injected, and an adapter that is empty is no longer silently
   replaced by `QuackStore`.
+- `loader` exports `SpecLoadError`, the single exception `load_openapi` raises
+  for every unusable spec, so a caller can catch one type instead of enumerating
+  exception families that change between upstream releases. **Breaking**: a
+  caller catching `prance.ValidationError` must catch `SpecLoadError` instead;
+  the original exception is available as `__cause__`.
 
 ### Fixed
 
+- The startup banner now reads `Starting quackend on http://<host>:<port>
+  (Ctrl+C to stop)`. It used to claim the mock server "is running" before
+  `uvicorn.run` had bound anything, and it omitted the URL scheme.
+- `--port` now rejects values outside `1..65535` with exit code 2. Previously
+  `--port 99999` was accepted and only failed later with an `OverflowError`
+  traceback from `bind()`.
+- An unusable spec now exits with code 2 and a single stderr line naming the
+  reason, instead of a traceback.
+- `quackend start --quiet` no longer prints the route table. The flag promised to
+  suppress banner output, and the table was printed on every start.
 - Every value that crosses the store boundary is a deep copy: mutating an item,
   a list or a nested value that came out of `store` no longer changes what the
   store holds, and mutating a payload passed to `store.create` or `store.update`
