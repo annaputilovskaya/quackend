@@ -110,15 +110,25 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "cli is thin"
+name = "domain is a leaf"
 type = "forbidden"
-source_modules = ["quackend.cli"]
-forbidden_modules = ["quackend.generator"]
-allow_indirect_imports = true
+source_modules = ["quackend.generator", "quackend.loader"]
+forbidden_modules = [
+    "quackend.store",
+    "quackend.server",
+    "quackend.reporting",
+    "quackend.cli",
+]
 
 [[tool.importlinter.contracts]]
-name = "server goes through store"
+name = "application knows no spec syntax"
 type = "forbidden"
-source_modules = ["quackend.server"]
+source_modules = ["quackend.store"]
+forbidden_modules = ["quackend.loader"]
+
+[[tool.importlinter.contracts]]
+name = "presentation does not reach the generator"
+type = "forbidden"
+source_modules = ["quackend.cli", "quackend.server", "quackend.reporting"]
 forbidden_modules = ["quackend.generator"]
 allow_indirect_imports = true
