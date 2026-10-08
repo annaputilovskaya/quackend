@@ -36,19 +36,22 @@ def test_start_help_lists_port_and_fail_rate(
 # is the wiring load_openapi -> build_app -> uvicorn.run, so each hop is replaced by
 # a recorder and the arguments uvicorn would have bound are asserted instead.
 def test_start_passes_the_port_to_uvicorn(
-    runner: CliRunner, patch_start: dict[str, object]
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]]
 ) -> None:
+    start = patch_start()
+
     result = runner.invoke(app, ["start", "spec.yaml", "--port", "9123"])
 
     assert result.exit_code == 0
-    assert patch_start["port"] == 9123
+    assert start["port"] == 9123
 
 
 def test_start_seeds_the_store_with_the_requested_seed(
     runner: CliRunner,
-    patch_start: dict[str, object],
+    patch_start: Callable[..., dict[str, object]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    patch_start()
     seeded: list[int | None] = []
     monkeypatch.setattr(QuackStore, "set_seed", lambda self, seed: seeded.append(seed))
 
@@ -60,32 +63,42 @@ def test_start_seeds_the_store_with_the_requested_seed(
 
 def test_start_prints_warnings_through_the_console(
     runner: CliRunner,
-    patch_start: dict[str, object],
-    warn_recorder: dict[str, object],
+    patch_start: Callable[..., dict[str, object]],
     strip_ansi: Callable[[str], str],
 ) -> None:
+    start = patch_start(record_warnings=True)
+    build_kwargs = start["build_app"]
+    assert isinstance(build_kwargs, dict)
+
     result = runner.invoke(app, ["start", "spec.yaml"])
 
     assert result.exit_code == 0
-    assert callable(warn_recorder["warn"])
+    assert callable(build_kwargs["warn"])
     assert "unsupported type 'weird-unknown-type'" in strip_ansi(result.stdout)
 
 
 def test_start_swallows_warnings_when_quiet(
     runner: CliRunner,
-    patch_start: dict[str, object],
-    warn_recorder: dict[str, object],
+    patch_start: Callable[..., dict[str, object]],
 ) -> None:
+    start = patch_start(record_warnings=True)
+    build_kwargs = start["build_app"]
+    assert isinstance(build_kwargs, dict)
+
     result = runner.invoke(app, ["start", "spec.yaml", "--quiet"])
 
     assert result.exit_code == 0
-    assert warn_recorder["warn"] is None
+    assert build_kwargs["warn"] is None
     assert "weird-unknown-type" not in result.stdout
 
 
 def test_start_quiet_omits_the_route_table(
-    runner: CliRunner, patch_start: dict[str, object], strip_ansi: Callable[[str], str]
+    runner: CliRunner,
+    patch_start: Callable[..., dict[str, object]],
+    strip_ansi: Callable[[str], str],
 ) -> None:
+    patch_start()
+
     result = runner.invoke(app, ["start", "spec.yaml", "--quiet"])
 
     assert result.exit_code == 0
@@ -93,8 +106,12 @@ def test_start_quiet_omits_the_route_table(
 
 
 def test_start_prints_the_route_table_without_quiet(
-    runner: CliRunner, patch_start: dict[str, object], strip_ansi: Callable[[str], str]
+    runner: CliRunner,
+    patch_start: Callable[..., dict[str, object]],
+    strip_ansi: Callable[[str], str],
 ) -> None:
+    patch_start()
+
     result = runner.invoke(app, ["start", "spec.yaml"])
 
     assert result.exit_code == 0
@@ -137,10 +154,12 @@ def test_cli_with_an_unusable_spec_reports_the_reason(
 
 def test_start_announces_the_address_before_it_serves(
     runner: CliRunner,
-    patch_start: dict[str, object],
+    patch_start: Callable[..., dict[str, object]],
     monkeypatch: pytest.MonkeyPatch,
     strip_ansi: Callable[[str], str],
 ) -> None:
+    patch_start()
+
     def refuse_to_serve(app: object, **kwargs: object) -> None:
         raise RuntimeError("the serve call is where the banner would have to follow")
 
@@ -153,7 +172,11 @@ def test_start_announces_the_address_before_it_serves(
     )
 
 
-def test_start_quiet_prints_no_banner(runner: CliRunner, patch_start: dict[str, object]) -> None:
+def test_start_quiet_prints_no_banner(
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]]
+) -> None:
+    patch_start()
+
     result = runner.invoke(app, ["start", "spec.yaml", "--quiet", "--port", "9123"])
 
     assert result.exit_code == 0
@@ -162,19 +185,23 @@ def test_start_quiet_prints_no_banner(runner: CliRunner, patch_start: dict[str, 
 
 @pytest.mark.parametrize("port", ["0", "65536", "99999"])
 def test_start_rejects_a_port_outside_the_tcp_range(
-    runner: CliRunner, patch_start: dict[str, object], port: str
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]], port: str
 ) -> None:
+    start = patch_start()
+
     result = runner.invoke(app, ["start", "spec.yaml", "--port", port])
 
     assert result.exit_code == 2
-    assert patch_start.get("port") is None
+    assert start.get("port") is None
 
 
 @pytest.mark.parametrize("port", [1, 65535])
 def test_start_accepts_the_endpoints_of_the_tcp_range(
-    runner: CliRunner, patch_start: dict[str, object], port: int
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]], port: int
 ) -> None:
+    start = patch_start()
+
     result = runner.invoke(app, ["start", "spec.yaml", "--port", str(port)])
 
     assert result.exit_code == 0
-    assert patch_start["port"] == port
+    assert start["port"] == port
