@@ -31,6 +31,10 @@ Domain         generator   loader   ← «листья»: чистые, не и�
 | Application | `store` | `generator` | `server`, `cli`, `reporting` |
 | Domain | `generator`, `loader` | ничего внутреннего | `store`, `server`, `cli` |
 
+> Проверяется в CI частично (перечень — §1.4): направление слоёв, «домен — лист»,
+> `store` не импортирует `loader`, прямой `presentation → generator`. Остальные строки
+> таблицы — договорённость, которую import-linter не выражает.
+
 ### 1.2 Инкапсуляция состояния
 
 - Каждый модуль владеет своим состоянием и не даёт его мутировать снаружи.
@@ -44,35 +48,40 @@ Domain         generator   loader   ← «листья»: чистые, не и�
 
 ### 1.4 Проверяемость линтером (договорённость = код в CI)
 
-Добавить в `pyproject.toml`:
+Контракты import-linter заданы в `pyproject.toml` (секция `[tool.importlinter]` и блоки
+`[[tool.importlinter.contracts]]`); при добавлении слоя контракт правится там в том же
+коммите, а этот раздел — в том же PR. Четыре контракта:
+
+- `architecture layers` (`layers`) — импорт строго вниз: `cli` → `reporting` → `server`
+  → `store` → `generator` → `loader`;
+- `domain is a leaf` (`forbidden`, без `allow_indirect_imports`) — `generator` и `loader`
+  не импортируют ни один модуль выше домена: `store`, `server`, `reporting`, `cli`;
+- `application knows no spec syntax` (`forbidden`) — `store` не импортирует `loader`
+  (слой приложения не знает синтаксиса спецификаций);
+- `presentation does not reach the generator` (`forbidden` + `allow_indirect_imports = true`) —
+  `cli`, `server`, `reporting` не импортируют `quackend.generator` напрямую; санкционированные
+  цепочки через `store` (`cli → store → generator`) остаются разрешёнными.
+
+Проверено по import-linter 2.15 (`importlinter/contracts/forbidden.py:135-141`):
+`allow_indirect_imports = true` проверяет только прямые цепочки. «Проход через `store`»
+import-linter не выражает — его обеспечивает порт (`StoreProtocol`), а не конфиг.
+Схема проверяется командой `lint-imports` (шаг 1/5 в `scripts/dod.sh`).
 
 ```toml
-[tool.lint-imports]
-contracts = [
-    { name = "architecture layers", layers = [
-        "quackend.cli",
-        "quackend.reporting",
-        "quackend.server",
-        "quackend.store",
-        "quackend.generator",
-        "quackend.loader",
-    ] },
-    { name = "cli is thin", modules = ["quackend.cli"],
-      forbidden = ["quackend.generator"], allow_indirect_imports = true },
-    { name = "server goes through store", modules = ["quackend.server"],
-      forbidden = ["quackend.generator"], allow_indirect_imports = true },
-]
-```
-
-Контракт `layers` разрешает импорт строго вниз; два `forbidden`-контракта с `allow_indirect_imports = true` запрещают только **прямой** «проход сквозь слой» (`cli → generator` напрямую, `server → generator` минуя `store`), оставляя санкционированные цепочки `cli → store → generator` и `server → store → generator`. `allow_indirect_imports = true` означает: нарушением считается прямой импорт запрещённого модуля; непрямые цепочки через разрешённый слой допускаются. (Окончательную схему контрактов сверять с документацией import-linter при внедрении.)
-
 [tool.ruff]
 target-version = "py310"
 line-length = 100
 src = ["src"]
 
 [tool.ruff.lint]
-select = ["F", "E", "W", "I", "UP", "B", "SIM", "TID", "D"]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "TID", "D", "C90", "PLR0911", "PLR0912"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+max-returns = 8
+max-branches = 14
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -97,6 +106,7 @@ warn_unused_ignores = true
 - `convention = "google"` жёстко фиксирует Google style для докстрингов (вместо ручных ignore).
 - `ban-relative-imports = "all"`: относительные импорты внутри пакета запрещены — только абсолютные `from quackend.* import ...`.
 - `per-file-ignores = { "tests/**" = ["D"] }`: **исключение** — тесты не обязаны иметь докстринги; правило `D` отключено только для `tests/**`. Тесты регулируются §5 (нейминг `test_<unit>_<scenario>_<expected>`, arrange/act/assert), а требование докстрингов §3 относится к публичному API модулей `src/`, а не к тестам.
+- `C90`/`PLR0911`/`PLR0912` с бюджетами 12/8/14 — бюджет сложности функции репозитория; всплывший outlier чиним кодом, гейт не откатываем и не глушим per-file-ignore.
 - mypy: **один конфиг на `src/` и `tests/`** — гейт запускает `mypy src tests`, поэтому тесты проверяются с той же строгостью и аннотации обязательны в них не меньше, чем в `src/`. Ослабляющего override для `tests.*` в конфиге нет намеренно: мёртвая секция, которую `warn_unused_configs` всё равно отметит, ничего не проверяет (§4.2). Флаги `warn_*` ловят typos в конфиге, устаревшие `# type: ignore` и неисполняемые секции.
 
 Обязательные проверки перед PR (см. §7): `lint-imports`, `ruff check`, `ruff format --check`, `mypy src tests`, покрытие.
