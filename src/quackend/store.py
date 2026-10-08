@@ -16,6 +16,10 @@ __all__ = ["COLLECTION_SIZE", "QuackStore", "StoreConfig", "StoreProtocol"]
 COLLECTION_SIZE = 10
 
 
+def _no_warn(_message: str) -> None:
+    """Discard a fail-soft message."""
+
+
 @dataclass(frozen=True, slots=True)
 class StoreConfig:
     """The limits a store generates with, as a value a caller can pass in.
@@ -223,9 +227,10 @@ class QuackStore:
         if resource in self._collections:
             return
 
+        emit = warn if warn is not None else _no_warn
+
         def on_warn(message: str) -> None:
-            if warn is not None:
-                warn(f"{resource}: {message}")
+            emit(f"{resource}: {message}")
 
         items: dict[str, dict[str, Any]] = {}
         for i in range(1, self._config.collection_size + 1):
@@ -270,9 +275,10 @@ class QuackStore:
         if existing is not None:
             return existing
 
+        emit = warn if warn is not None else _no_warn
+
         def on_warn(message: str) -> None:
-            if warn is not None:
-                warn(f"{resource}: {message}")
+            emit(f"{resource}: {message}")
 
         item = self._generate(schema, on_warn)
         item["id"] = key
