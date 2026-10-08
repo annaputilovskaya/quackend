@@ -43,6 +43,11 @@ path = "src/quackend/__init__.py"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = [
+    "default::starlette.exceptions.StarletteDeprecationWarning:fastapi\\.testclient.*",
+    "default::DeprecationWarning:starlette\\..*",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.coverage.run]
 source = ["src/quackend"]
@@ -57,7 +62,14 @@ src = ["src"]
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["F", "E", "W", "I", "UP", "B", "SIM", "TID", "D"]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "TID", "D", "C90", "PLR0911", "PLR0912"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.pylint]
+max-returns = 8
+max-branches = 14
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
