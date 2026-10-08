@@ -40,6 +40,15 @@ _FORMAT_PRODUCERS: dict[str, Callable[[Faker], str]] = {
     "password": lambda f: f.password(),
 }
 
+_ScalarProducer = Callable[[Mapping[str, Any], Faker, Callable[[str], None] | None], Any]
+
+_SCALAR_PRODUCERS: dict[str, _ScalarProducer] = {
+    "integer": lambda schema, fake, warn: _integer_value(schema, fake, warn),
+    "number": lambda schema, fake, warn: _number_value(schema, fake, warn),
+    "boolean": lambda schema, fake, warn: fake.boolean(),
+    "string": lambda schema, fake, warn: _string_value(schema, fake),
+}
+
 
 def generate_value(
     schema: Mapping[str, Any],
@@ -93,54 +102,21 @@ def _generate_value(
         return _jsonable(copy.deepcopy(example), warn)
     if "enum" in schema:
         return _jsonable(copy.deepcopy(fake.random.choice(schema["enum"])), warn)
-    if "oneOf" in schema or "anyOf" in schema:
-        branches: list[dict[str, Any]] = schema.get("oneOf") or schema.get("anyOf") or []
-        if not branches:
-            if warn is not None:
-                warn("empty oneOf/anyOf, returning null")
-            return None
-        branch = next((b for b in branches if b.get("example") is not None), branches[0])
-        if warn is not None:
-            warn("used first branch of oneOf/anyOf")
-        return _generate_value(branch, fake, depth + 1, warn, depth_limit, array_max)
-    if "allOf" in schema:
-        all_branches: list[dict[str, Any]] = schema["allOf"]
-        example_branch = next((b for b in all_branches if b.get("example") is not None), None)
-        if example_branch is not None:
-            return _generate_value(example_branch, fake, depth + 1, warn, depth_limit, array_max)
-        merged: dict[str, Any] = {}
-        for branch in all_branches:
-            branch_props: Any = branch.get("properties")
-            merged_props: Any = merged.get("properties")
-            if isinstance(branch_props, dict) and isinstance(merged_props, dict):
-                merged["properties"] = {**merged_props, **branch_props}
-            else:
-                merged.update(branch)
-        return _generate_value(merged, fake, depth + 1, warn, depth_limit, array_max)
+    if "oneOf" in schema or "anyOf" in schema or "allOf" in schema:
+        return _composite_value(schema, fake, depth, warn, depth_limit, array_max)
     schema_type = schema.get("type")
-    if not schema_type:
-        if warn is not None:
-            warn("missing type, returning null")
-        return None
     if schema_type == "object":
         return _object_value(schema, fake, depth, warn, depth_limit, array_max)
     if schema_type == "array":
-        items = schema.get("items") or {}
-        length = fake.random.randint(_ARRAY_MIN, array_max)
-        return [
-            _generate_value(items, fake, depth + 1, warn, depth_limit, array_max)
-            for _ in range(length)
-        ]
-    if schema_type == "integer":
-        return _integer_value(schema, fake, warn)
-    if schema_type == "number":
-        return _number_value(schema, fake, warn)
-    if schema_type == "boolean":
-        return fake.boolean()
-    if schema_type == "string":
-        return _string_value(schema, fake)
+        return _array_value(schema, fake, depth, warn, depth_limit, array_max)
+    producer = _SCALAR_PRODUCERS.get(schema_type) if isinstance(schema_type, str) else None
+    if producer is not None:
+        return producer(schema, fake, warn)
     if warn is not None:
-        warn(f"unsupported type {schema_type!r}, returning null")
+        if not schema_type:
+            warn("missing type, returning null")
+        else:
+            warn(f"unsupported type {schema_type!r}, returning null")
     return None
 
 
@@ -182,6 +158,72 @@ def _object_value(
         name: _generate_value(sub_schema, fake, depth + 1, warn, depth_limit, array_max)
         for name, sub_schema in (schema.get("properties") or {}).items()
     }
+
+
+def _array_value(
+    schema: Mapping[str, Any],
+    fake: Faker,
+    depth: int,
+    warn: Callable[[str], None] | None,
+    depth_limit: int,
+    array_max: int,
+) -> list[Any]:
+    """Generate an array by recursing into ``items`` for each slot."""
+    items = schema.get("items") or {}
+    length = fake.random.randint(_ARRAY_MIN, array_max)
+    return [
+        _generate_value(items, fake, depth + 1, warn, depth_limit, array_max) for _ in range(length)
+    ]
+
+
+def _composite_value(
+    schema: Mapping[str, Any],
+    fake: Faker,
+    depth: int,
+    warn: Callable[[str], None] | None,
+    depth_limit: int,
+    array_max: int,
+) -> Any:
+    """Resolve a ``oneOf``/``anyOf``/``allOf`` schema by picking or merging a branch.
+
+    Branch order matches the historical cascade: ``oneOf``/``anyOf`` win over
+    ``allOf`` when a schema declares both.
+    """
+    if "oneOf" in schema or "anyOf" in schema:
+        branches: list[dict[str, Any]] = schema.get("oneOf") or schema.get("anyOf") or []
+        if not branches:
+            if warn is not None:
+                warn("empty oneOf/anyOf, returning null")
+            return None
+        branch = next((b for b in branches if b.get("example") is not None), branches[0])
+        if warn is not None:
+            warn("used first branch of oneOf/anyOf")
+        return _generate_value(branch, fake, depth + 1, warn, depth_limit, array_max)
+    return _merged_all_of(schema, fake, depth, warn, depth_limit, array_max)
+
+
+def _merged_all_of(
+    schema: Mapping[str, Any],
+    fake: Faker,
+    depth: int,
+    warn: Callable[[str], None] | None,
+    depth_limit: int,
+    array_max: int,
+) -> Any:
+    """Merge every ``allOf`` branch (or take the one with an example) and generate."""
+    all_branches: list[dict[str, Any]] = schema["allOf"]
+    example_branch = next((b for b in all_branches if b.get("example") is not None), None)
+    if example_branch is not None:
+        return _generate_value(example_branch, fake, depth + 1, warn, depth_limit, array_max)
+    merged: dict[str, Any] = {}
+    for branch in all_branches:
+        branch_props: Any = branch.get("properties")
+        merged_props: Any = merged.get("properties")
+        if isinstance(branch_props, dict) and isinstance(merged_props, dict):
+            merged["properties"] = {**merged_props, **branch_props}
+        else:
+            merged.update(branch)
+    return _generate_value(merged, fake, depth + 1, warn, depth_limit, array_max)
 
 
 def _jsonable(value: Any, warn: Callable[[str], None] | None = None) -> Any:
