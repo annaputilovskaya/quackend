@@ -36,37 +36,40 @@ def runner() -> CliRunner:
 
 
 @pytest.fixture
-def patch_start(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+def patch_start(monkeypatch: pytest.MonkeyPatch) -> Callable[..., dict[str, object]]:
     """Replace every hop of `start` so no socket is opened and no spec is read.
 
-    Returns the dict that a replaced ``uvicorn.run`` records its keyword
-    arguments into, so a test can assert what the server was asked to serve.
+    This fixture is the only patcher of ``cli_module.build_app``, so two
+    fixtures can never fight over the attribute. The returned installer
+    records what ``start`` passed to ``uvicorn.run`` and exposes the kwargs
+    handed to ``build_app`` under the ``"build_app"`` key.
+
+    Args:
+        record_warnings: fire the ``warn`` callback once inside the fake
+            ``build_app``; otherwise ``warn`` is recorded but never invoked.
+
+    Returns:
+        An installer that patches the hops and returns the recorder dict.
     """
-    served: dict[str, object] = {}
-    monkeypatch.setattr(cli_module, "load_openapi", lambda _: dict(PROBE_SPEC))
-    monkeypatch.setattr(cli_module, "build_app", lambda *args, **kwargs: object())
-    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: served.update(kwargs))
-    return served
 
+    def _install(*, record_warnings: bool = False) -> dict[str, object]:
+        served: dict[str, object] = {}
+        seen: dict[str, object] = {}
 
-@pytest.fixture
-def warn_recorder(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
-    """Replace `build_app` so it records kwargs and fires the `warn` callback.
+        def fake_build_app(*args: object, **kwargs: object) -> object:
+            seen.update(kwargs)
+            warn = kwargs.get("warn")
+            if record_warnings and callable(warn):
+                warn("unsupported type 'weird-unknown-type'")
+            return object()
 
-    `start` passes either a callable or None as `warn` depending on `--quiet`;
-    firing the callable here is what proves a warning would reach the console.
-    """
-    seen: dict[str, object] = {}
+        monkeypatch.setattr(cli_module, "load_openapi", lambda _: dict(PROBE_SPEC))
+        monkeypatch.setattr(cli_module, "build_app", fake_build_app)
+        monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: served.update(kwargs))
+        served["build_app"] = seen
+        return served
 
-    def fake_build_app(*args: object, **kwargs: object) -> object:
-        seen.update(kwargs)
-        warn = kwargs.get("warn")
-        if callable(warn):
-            warn("unsupported type 'weird-unknown-type'")
-        return object()
-
-    monkeypatch.setattr(cli_module, "build_app", fake_build_app)
-    return seen
+    return _install
 
 
 @pytest.fixture
