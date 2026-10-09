@@ -37,7 +37,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 ```
 
 The route table, the version line and the banner are the startup output of
-`start`; `--quiet` suppresses all three.
+`start`; `--quiet` suppresses all three and reduces uvicorn's log level.
 
 ```bash
 quackend start ./swagger.yaml \

@@ -95,7 +95,8 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 ### Changed
 
 - **Breaking**: `--quiet` no longer suppresses fail-soft warnings; it does only
-  what the help and README promise (route table, banner, uvicorn log level).
+  what the help and README promise (route table, version line, banner, uvicorn
+  log level).
 - `build_app()` without a `warn` callback reports fail-soft diagnostics through
   the `logging` package (`quackend` logger) instead of discarding them.
 - `build_app` takes an `rng` the simulated failures are drawn from, so
@@ -129,5 +130,5 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   can be passed.
 - A generated item is narrowed to an object once, in the generator
   (`generate_object`), instead of at the two call sites in `store`.
-- **Breaking**: warnings are printed to stderr instead of stdout, so stdout
-  carries only data and `2>/dev/null` gives full silence.
+- **Breaking**: warnings are printed to stderr instead of stdout, so they no
+  longer pollute `stdout`; `2>/dev/null` silences them.
