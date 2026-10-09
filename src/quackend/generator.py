@@ -202,9 +202,13 @@ def _composite_value(
         if not branches:
             emit("empty oneOf/anyOf, returning null")
             return None
-        branch = next((b for b in branches if b.get("example") is not None), branches[0])
-        emit("used first branch of oneOf/anyOf")
-        return _generate_value(branch, fake, depth + 1, emit, depth_limit, array_max)
+        preferred = next((b for b in branches if b.get("example") is not None), None)
+        if preferred is None:
+            preferred, taken = branches[0], 1
+        else:
+            taken = branches.index(preferred) + 1
+        emit(f"used branch {taken} of {len(branches)} in oneOf/anyOf")
+        return _generate_value(preferred, fake, depth + 1, emit, depth_limit, array_max)
     return _merged_all_of(schema, fake, depth, emit, depth_limit, array_max)
 
 

@@ -340,3 +340,13 @@ def test_generate_value_object_over_depth_limit_warns(fake: Faker) -> None:
     assert value == {"a": {"b": {}}}
     assert any("depth_limit=1" in message for message in messages)
     assert any("'c'" in message for message in messages)
+
+
+def test_generate_value_any_of_names_the_branch_actually_taken(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"anyOf": [{"type": "string"}, {"example": "chosen"}]}
+
+    value = generate_value(schema, fake, messages.append)
+
+    assert value == "chosen"
+    assert "used branch 2 of 2 in oneOf/anyOf" in messages
