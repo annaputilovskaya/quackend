@@ -440,3 +440,13 @@ def test_generate_value_unanchored_pattern_uses_search_semantics(fake: Faker) ->
     generate_value(schema, fake, messages.append)
 
     assert not any("does not match pattern" in message for message in messages)
+
+
+def test_generate_value_non_string_pattern_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "pattern": 123}
+
+    value = generate_value(schema, fake, messages.append)
+
+    assert isinstance(value, str)
+    assert any("cannot honour pattern" in message for message in messages)

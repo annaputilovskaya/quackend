@@ -355,10 +355,12 @@ def _string_value(schema: Mapping[str, Any], fake: Faker, emit: Callable[[str], 
 
 
 def _pattern_matches(pattern: str, value: str) -> bool:
-    """Report whether a value matches a pattern, treating an invalid regex as a miss.
+    """Report whether a value matches a pattern; an invalid or non-string pattern is a miss.
 
     JSON Schema ``pattern`` is unanchored search semantics, not a full match.
     """
+    if not isinstance(pattern, str):
+        return False
     try:
         return re.search(pattern, value) is not None
     except re.error:
@@ -395,8 +397,10 @@ def _is_numeric_pattern(pattern: str) -> bool:
     r"""Return whether a pattern describes a decimal-as-string value.
 
     A pattern counts as numeric when it accepts plain numbers like "0" and
-    "1.25" while rejecting ordinary words, e.g. :code:`^\d*\.?\d*$`.
+    "1.25"     while rejecting ordinary words, e.g. :code:`^\d*\.?\d*$`.
     """
+    if not isinstance(pattern, str):
+        return False
     try:
         regex = re.compile(pattern)
     except re.error:
