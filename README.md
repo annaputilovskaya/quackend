@@ -65,6 +65,9 @@ app = build_app(openapi_dict)
 # uvicorn.run(app, host="127.0.0.1", port=8000)
 ```
 
+Without a `warn` callback, fail-soft diagnostics are reported through the
+`logging` package (`quackend` logger).
+
 ## MCP server
 
 `pip install mcp-server-quackend` — let AI agents spin up mocks themselves.

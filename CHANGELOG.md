@@ -94,6 +94,8 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- `build_app()` without a `warn` callback reports fail-soft diagnostics through
+  the `logging` package (`quackend` logger) instead of discarding them.
 - `build_app` takes an `rng` the simulated failures are drawn from, so
   `build_app(..., rng=random.Random(7))` makes them reproducible, and it rejects
   a negative `latency_ms` and a `fail_rate` outside `[0, 1]` with a `ValueError`
