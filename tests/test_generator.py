@@ -321,3 +321,41 @@ def test_generate_value_public_call_takes_no_depth() -> None:
 def test_generation_limits_are_published() -> None:
     assert DEPTH_LIMIT == 3
     assert ARRAY_MAX == 5
+
+
+def test_generate_value_object_over_depth_limit_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    deep = {
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": {"b": {"type": "object", "properties": {"c": {"type": "integer"}}}},
+            }
+        },
+    }
+
+    value = generate_value(deep, fake, messages.append, depth_limit=1)
+
+    assert value == {"a": {"b": {}}}
+    assert any("depth_limit=1" in message for message in messages)
+    assert any("'c'" in message for message in messages)
+
+
+def test_generate_value_any_of_names_the_branch_actually_taken(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"anyOf": [{"type": "string"}, {"example": "chosen"}]}
+
+    value = generate_value(schema, fake, messages.append)
+
+    assert value == "chosen"
+    assert "used branch 2 of 2 in oneOf/anyOf" in messages
+
+
+def test_generate_value_any_of_without_example_names_the_first_branch(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+
+    generate_value(schema, fake, messages.append)
+
+    assert "used branch 1 of 2 in oneOf/anyOf" in messages

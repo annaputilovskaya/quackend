@@ -17,15 +17,16 @@ from quackend.store import QuackStore
 
 app = typer.Typer(add_completion=False)
 console = Console()
+warn_console = Console(stderr=True)
 
 
 def _emit_warning(message: str) -> None:
-    """Print a generator warning on the shared console.
+    """Print a generator warning on stderr.
 
     Args:
         message: the fail-soft message reported by the library.
     """
-    console.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
+    warn_console.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
 
 
 @app.callback()
@@ -99,7 +100,7 @@ def start(
         store,
         latency_ms=latency,
         fail_rate=fail_rate,
-        warn=None if quiet else _emit_warning,
+        warn=_emit_warning,
     )
     if not quiet:
         typer.echo(f"Starting quackend on http://{host}:{port} (Ctrl+C to stop)")

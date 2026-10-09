@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import logging
 import random
 import time
 from collections.abc import Callable, Mapping, MutableMapping
@@ -297,9 +298,13 @@ def test_fail_soft_unsupported_schema_does_not_crash() -> None:
     assert any("weird-unknown-type" in message for message in messages)
 
 
-def test_build_app_prints_no_warning_of_its_own(capfd: pytest.CaptureFixture[str]) -> None:
-    build_app(make_weird_spec())
+def test_build_app_reports_default_diagnostics_through_logging(
+    caplog: pytest.LogCaptureFixture, capfd: pytest.CaptureFixture[str]
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="quackend"):
+        build_app(make_weird_spec())
 
+    assert any("weird-unknown-type" in record.getMessage() for record in caplog.records)
     assert "WARNING" not in capfd.readouterr().out
 
 

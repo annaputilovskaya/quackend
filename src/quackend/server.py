@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
@@ -26,9 +27,12 @@ _MAX_BODY_BYTES = 1_048_576
 
 __all__ = ["build_app"]
 
+_LOGGER = logging.getLogger("quackend")
 
-def _null_warn(_message: str) -> None:
-    """Discard a fail-soft message."""
+
+def _log_warn(message: str) -> None:
+    """Report a fail-soft message through the quackend logger."""
+    _LOGGER.warning(message)
 
 
 def _ok_response(content: Mapping[str, Any] | Sequence[Any], status: int) -> Response:
@@ -317,8 +321,8 @@ def build_app(
         store: an optional shared store; a fresh one is created otherwise.
         latency_ms: artificial delay applied to every request in milliseconds.
         fail_rate: probability in [0, 1] that a request fails with HTTP 500.
-        warn: an optional callback receiving fail-soft messages. Nothing is
-            printed by the library; the caller decides how to surface them.
+        warn: an optional callback receiving fail-soft messages. When omitted,
+            messages are reported through the ``quackend`` logger.
         rng: the random source simulated failures are drawn from, so a seeded one
             makes them reproducible; the module-global ``random`` is used
             otherwise.
@@ -338,7 +342,7 @@ def build_app(
         raise ValueError(f"fail_rate must be within [0, 1], got {fail_rate}")
 
     resolved_store = store if store is not None else QuackStore()
-    emit = warn if warn is not None else _null_warn
+    emit = warn if warn is not None else _log_warn
     draw: Callable[[], float] = rng.random if rng is not None else random.random
 
     operations = list(iter_operations(spec))

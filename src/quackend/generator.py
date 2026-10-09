@@ -40,14 +40,18 @@ _FORMAT_PRODUCERS: dict[str, Callable[[Faker], str]] = {
     "password": lambda f: f.password(),
 }
 
-_ScalarProducer = Callable[[Mapping[str, Any], Faker, Callable[[str], None] | None], Any]
+_ScalarProducer = Callable[[Mapping[str, Any], Faker, Callable[[str], None]], Any]
 
 _SCALAR_PRODUCERS: dict[str, _ScalarProducer] = {
-    "integer": lambda schema, fake, warn: _integer_value(schema, fake, warn),
-    "number": lambda schema, fake, warn: _number_value(schema, fake, warn),
-    "boolean": lambda schema, fake, warn: fake.boolean(),
-    "string": lambda schema, fake, warn: _string_value(schema, fake),
+    "integer": lambda schema, fake, emit: _integer_value(schema, fake, emit),
+    "number": lambda schema, fake, emit: _number_value(schema, fake, emit),
+    "boolean": lambda schema, fake, emit: fake.boolean(),
+    "string": lambda schema, fake, emit: _string_value(schema, fake),
 }
+
+
+def _no_warn(_message: str) -> None:
+    """Discard a fail-soft message."""
 
 
 def generate_value(
@@ -70,14 +74,15 @@ def generate_value(
     Returns:
         A generated value, or None when the schema is missing or unsupported.
     """
-    return _generate_value(schema, fake, 0, warn, depth_limit, array_max)
+    emit = warn if warn is not None else _no_warn
+    return _generate_value(schema, fake, 0, emit, depth_limit, array_max)
 
 
 def _generate_value(
     schema: Mapping[str, Any],
     fake: Faker,
     depth: int,
-    warn: Callable[[str], None] | None,
+    emit: Callable[[str], None],
     depth_limit: int,
     array_max: int,
 ) -> Any:
@@ -90,7 +95,7 @@ def _generate_value(
         schema: a JSON Schema fragment to satisfy.
         fake: a Faker instance used to produce values.
         depth: current nesting depth, guards against runaway recursion.
-        warn: an optional callback invoked with a message for fail-soft cases.
+        emit: the fail-soft callback; never None after the public entry point.
         depth_limit: how deep an object nests before it becomes empty.
         array_max: the longest array a schema can produce.
 
@@ -99,24 +104,23 @@ def _generate_value(
     """
     example = schema.get("example")
     if example is not None:
-        return _jsonable(copy.deepcopy(example), warn)
+        return _jsonable(copy.deepcopy(example), emit)
     if "enum" in schema:
-        return _jsonable(copy.deepcopy(fake.random.choice(schema["enum"])), warn)
+        return _jsonable(copy.deepcopy(fake.random.choice(schema["enum"])), emit)
     if "oneOf" in schema or "anyOf" in schema or "allOf" in schema:
-        return _composite_value(schema, fake, depth, warn, depth_limit, array_max)
+        return _composite_value(schema, fake, depth, emit, depth_limit, array_max)
     schema_type = schema.get("type")
     if schema_type == "object":
-        return _object_value(schema, fake, depth, warn, depth_limit, array_max)
+        return _object_value(schema, fake, depth, emit, depth_limit, array_max)
     if schema_type == "array":
-        return _array_value(schema, fake, depth, warn, depth_limit, array_max)
+        return _array_value(schema, fake, depth, emit, depth_limit, array_max)
     producer = _SCALAR_PRODUCERS.get(schema_type) if isinstance(schema_type, str) else None
     if producer is not None:
-        return producer(schema, fake, warn)
-    if warn is not None:
-        if not schema_type:
-            warn("missing type, returning null")
-        else:
-            warn(f"unsupported type {schema_type!r}, returning null")
+        return producer(schema, fake, emit)
+    if not schema_type:
+        emit("missing type, returning null")
+    else:
+        emit(f"unsupported type {schema_type!r}, returning null")
     return None
 
 
@@ -148,14 +152,18 @@ def _object_value(
     schema: Mapping[str, Any],
     fake: Faker,
     depth: int,
-    warn: Callable[[str], None] | None,
+    emit: Callable[[str], None],
     depth_limit: int,
     array_max: int,
 ) -> dict[str, Any]:
     if depth > depth_limit:
+        emit(
+            f"nesting deeper than depth_limit={depth_limit}; returning an empty object "
+            f"instead of {sorted(schema.get('properties') or {})}"
+        )
         return {}
     return {
-        name: _generate_value(sub_schema, fake, depth + 1, warn, depth_limit, array_max)
+        name: _generate_value(sub_schema, fake, depth + 1, emit, depth_limit, array_max)
         for name, sub_schema in (schema.get("properties") or {}).items()
     }
 
@@ -164,7 +172,7 @@ def _array_value(
     schema: Mapping[str, Any],
     fake: Faker,
     depth: int,
-    warn: Callable[[str], None] | None,
+    emit: Callable[[str], None],
     depth_limit: int,
     array_max: int,
 ) -> list[Any]:
@@ -172,7 +180,7 @@ def _array_value(
     items = schema.get("items") or {}
     length = fake.random.randint(_ARRAY_MIN, array_max)
     return [
-        _generate_value(items, fake, depth + 1, warn, depth_limit, array_max) for _ in range(length)
+        _generate_value(items, fake, depth + 1, emit, depth_limit, array_max) for _ in range(length)
     ]
 
 
@@ -180,7 +188,7 @@ def _composite_value(
     schema: Mapping[str, Any],
     fake: Faker,
     depth: int,
-    warn: Callable[[str], None] | None,
+    emit: Callable[[str], None],
     depth_limit: int,
     array_max: int,
 ) -> Any:
@@ -192,21 +200,23 @@ def _composite_value(
     if "oneOf" in schema or "anyOf" in schema:
         branches: list[dict[str, Any]] = schema.get("oneOf") or schema.get("anyOf") or []
         if not branches:
-            if warn is not None:
-                warn("empty oneOf/anyOf, returning null")
+            emit("empty oneOf/anyOf, returning null")
             return None
-        branch = next((b for b in branches if b.get("example") is not None), branches[0])
-        if warn is not None:
-            warn("used first branch of oneOf/anyOf")
-        return _generate_value(branch, fake, depth + 1, warn, depth_limit, array_max)
-    return _merged_all_of(schema, fake, depth, warn, depth_limit, array_max)
+        preferred = next((b for b in branches if b.get("example") is not None), None)
+        if preferred is None:
+            preferred, taken = branches[0], 1
+        else:
+            taken = branches.index(preferred) + 1
+        emit(f"used branch {taken} of {len(branches)} in oneOf/anyOf")
+        return _generate_value(preferred, fake, depth + 1, emit, depth_limit, array_max)
+    return _merged_all_of(schema, fake, depth, emit, depth_limit, array_max)
 
 
 def _merged_all_of(
     schema: Mapping[str, Any],
     fake: Faker,
     depth: int,
-    warn: Callable[[str], None] | None,
+    emit: Callable[[str], None],
     depth_limit: int,
     array_max: int,
 ) -> Any:
@@ -214,7 +224,7 @@ def _merged_all_of(
     all_branches: list[dict[str, Any]] = schema["allOf"]
     example_branch = next((b for b in all_branches if b.get("example") is not None), None)
     if example_branch is not None:
-        return _generate_value(example_branch, fake, depth + 1, warn, depth_limit, array_max)
+        return _generate_value(example_branch, fake, depth + 1, emit, depth_limit, array_max)
     merged: dict[str, Any] = {}
     for branch in all_branches:
         branch_props: Any = branch.get("properties")
@@ -223,10 +233,10 @@ def _merged_all_of(
             merged["properties"] = {**merged_props, **branch_props}
         else:
             merged.update(branch)
-    return _generate_value(merged, fake, depth + 1, warn, depth_limit, array_max)
+    return _generate_value(merged, fake, depth + 1, emit, depth_limit, array_max)
 
 
-def _jsonable(value: Any, warn: Callable[[str], None] | None = None) -> Any:
+def _jsonable(value: Any, emit: Callable[[str], None]) -> Any:
     """Return a detached, JSON-serialisable copy of a value taken from a spec.
 
     YAML readers type unquoted dates as ``datetime.date``; such a value would
@@ -234,7 +244,7 @@ def _jsonable(value: Any, warn: Callable[[str], None] | None = None) -> Any:
 
     Args:
         value: a value produced by a YAML or JSON parser.
-        warn: an optional callback invoked when a coercion was needed.
+        emit: the fail-soft callback; never None after the public entry point.
 
     Returns:
         A value that ``json.dumps`` accepts, sharing no mutable state with the
@@ -243,11 +253,10 @@ def _jsonable(value: Any, warn: Callable[[str], None] | None = None) -> Any:
     if isinstance(value, _JSON_SCALARS):
         return value
     if isinstance(value, dict):
-        return {str(name): _jsonable(item, warn) for name, item in value.items()}
+        return {str(name): _jsonable(item, emit) for name, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_jsonable(item, warn) for item in value]
-    if warn is not None:
-        warn(f"spec value of type {type(value).__name__} is not JSON, coerced to str")
+        return [_jsonable(item, emit) for item in value]
+    emit(f"spec value of type {type(value).__name__} is not JSON, coerced to str")
     return str(value)
 
 
@@ -256,7 +265,7 @@ def _ordered_bounds(
     high: _T | None,
     low_default: _T,
     default_high: _T,
-    warn: Callable[[str], None] | None,
+    emit: Callable[[str], None],
     what: str,
 ) -> tuple[_T, _T]:
     """Return an inclusive range that satisfies both bounds of a schema.
@@ -272,7 +281,7 @@ def _ordered_bounds(
             typed like the bounds themselves so an integer range never passes
             through a float and lose precision above 2 ** 53.
         default_high: the upper bound used when the schema declares none.
-        warn: an optional callback invoked when inverted bounds were swapped.
+        emit: the fail-soft callback; never None after the public entry point.
         what: the schema type name, used in the warning message.
 
     Returns:
@@ -285,15 +294,14 @@ def _ordered_bounds(
         high = low + default_high
     if low > high:
         low, high = high, low
-        if warn is not None:
-            warn(f"inverted {what} bounds, swapped to {low:g}..{high:g}")
+        emit(f"inverted {what} bounds, swapped to {low:g}..{high:g}")
     return low, high
 
 
 def _integer_value(
     schema: Mapping[str, Any],
     fake: Faker,
-    warn: Callable[[str], None] | None = None,
+    emit: Callable[[str], None],
 ) -> int:
     low: int | None = schema.get("minimum")
     high: int | None = schema.get("maximum")
@@ -301,17 +309,17 @@ def _integer_value(
         low = schema["exclusiveMinimum"] + 1
     if schema.get("exclusiveMaximum") is not None:
         high = schema["exclusiveMaximum"] - 1
-    low_bound, high_bound = _ordered_bounds(low, high, 0, _DEFAULT_INTEGER_MAX, warn, "integer")
+    low_bound, high_bound = _ordered_bounds(low, high, 0, _DEFAULT_INTEGER_MAX, emit, "integer")
     return fake.random_int(low_bound, high_bound)
 
 
 def _number_value(
     schema: Mapping[str, Any],
     fake: Faker,
-    warn: Callable[[str], None] | None = None,
+    emit: Callable[[str], None],
 ) -> float:
     low, high = _ordered_bounds(
-        schema.get("minimum"), schema.get("maximum"), 0.0, _DEFAULT_NUMBER_MAX, warn, "number"
+        schema.get("minimum"), schema.get("maximum"), 0.0, _DEFAULT_NUMBER_MAX, emit, "number"
     )
     value: float = fake.random.uniform(low, high)
     return value

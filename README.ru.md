@@ -37,7 +37,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
 ```
 
 Таблица маршрутов, строка версии и баннер — это весь вывод `start` при старте;
-`--quiet` подавляет все три.
+`--quiet` подавляет все три и понижает уровень логирования uvicorn.
 
 ```bash
 quackend start ./swagger.yaml \
@@ -64,6 +64,9 @@ from quackend.server import build_app
 app = build_app(openapi_dict)
 # uvicorn.run(app, host="127.0.0.1", port=8000)
 ```
+
+Без колбэка `warn` мягкие диагностические сообщения выводятся через пакет
+`logging` (логгер `quackend`).
 
 ## MCP-сервер
 
