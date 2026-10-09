@@ -350,3 +350,12 @@ def test_generate_value_any_of_names_the_branch_actually_taken(fake: Faker) -> N
 
     assert value == "chosen"
     assert "used branch 2 of 2 in oneOf/anyOf" in messages
+
+
+def test_generate_value_any_of_without_example_names_the_first_branch(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+
+    generate_value(schema, fake, messages.append)
+
+    assert "used branch 1 of 2 in oneOf/anyOf" in messages
