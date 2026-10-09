@@ -74,7 +74,7 @@ def test_start_prints_warnings_through_the_console(
 
     assert result.exit_code == 0
     assert callable(build_kwargs["warn"])
-    assert "unsupported type 'weird-unknown-type'" in strip_ansi(result.stdout)
+    assert "unsupported type 'weird-unknown-type'" in strip_ansi(result.stderr)
 
 
 def test_start_reports_warnings_when_quiet(
@@ -90,7 +90,7 @@ def test_start_reports_warnings_when_quiet(
 
     assert result.exit_code == 0
     assert build_kwargs["warn"] is not None
-    assert "weird-unknown-type" in strip_ansi(result.stdout)
+    assert "weird-unknown-type" in strip_ansi(result.stderr)
 
 
 def test_start_quiet_omits_the_route_table(
@@ -124,7 +124,7 @@ def test_emit_warning_escapes_rich_markup(
 ) -> None:
     cli_module._emit_warning("unsupported type '[/]'")
 
-    assert "[/]" in strip_ansi(capsys.readouterr().out)
+    assert "[/]" in strip_ansi(capsys.readouterr().err)
 
 
 @pytest.mark.parametrize("command", ["start", "routes"])

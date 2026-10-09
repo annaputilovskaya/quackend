@@ -129,3 +129,5 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   can be passed.
 - A generated item is narrowed to an object once, in the generator
   (`generate_object`), instead of at the two call sites in `store`.
+- **Breaking**: warnings are printed to stderr instead of stdout, so stdout
+  carries only data and `2>/dev/null` gives full silence.
