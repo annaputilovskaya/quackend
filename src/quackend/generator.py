@@ -157,6 +157,10 @@ def _object_value(
     array_max: int,
 ) -> dict[str, Any]:
     if depth > depth_limit:
+        emit(
+            f"nesting deeper than depth_limit={depth_limit}; returning an empty object "
+            f"instead of {sorted(schema.get('properties') or {})}"
+        )
         return {}
     return {
         name: _generate_value(sub_schema, fake, depth + 1, emit, depth_limit, array_max)

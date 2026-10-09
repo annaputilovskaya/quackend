@@ -321,3 +321,22 @@ def test_generate_value_public_call_takes_no_depth() -> None:
 def test_generation_limits_are_published() -> None:
     assert DEPTH_LIMIT == 3
     assert ARRAY_MAX == 5
+
+
+def test_generate_value_object_over_depth_limit_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    deep = {
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": {"b": {"type": "object", "properties": {"c": {"type": "integer"}}}},
+            }
+        },
+    }
+
+    value = generate_value(deep, fake, messages.append, depth_limit=1)
+
+    assert value == {"a": {"b": {}}}
+    assert any("depth_limit=1" in message for message in messages)
+    assert any("'c'" in message for message in messages)
