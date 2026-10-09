@@ -132,3 +132,8 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   (`generate_object`), instead of at the two call sites in `store`.
 - **Breaking**: warnings are printed to stderr instead of stdout, so they no
   longer pollute `stdout`; `2>/dev/null` silences them.
+- A declared `format` still wins over `maxLength`/`minLength`/`pattern`, but
+  every lost constraint now reports a warning naming the conflict
+  (`format 'email' kept over maxLength 10 (25 chars) — spec conflict`); a
+  numeric `pattern` that matches neither candidate warns before falling back,
+  and an unsupportable `pattern` warns instead of being ignored.

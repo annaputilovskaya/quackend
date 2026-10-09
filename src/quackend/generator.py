@@ -46,7 +46,7 @@ _SCALAR_PRODUCERS: dict[str, _ScalarProducer] = {
     "integer": lambda schema, fake, emit: _integer_value(schema, fake, emit),
     "number": lambda schema, fake, emit: _number_value(schema, fake, emit),
     "boolean": lambda schema, fake, emit: fake.boolean(),
-    "string": lambda schema, fake, emit: _string_value(schema, fake),
+    "string": lambda schema, fake, emit: _string_value(schema, fake, emit),
 }
 
 
@@ -325,21 +325,70 @@ def _number_value(
     return value
 
 
-def _string_value(schema: Mapping[str, Any], fake: Faker) -> str:
+def _string_value(schema: Mapping[str, Any], fake: Faker, emit: Callable[[str], None]) -> str:
     format_name: str | None = schema.get("format")
     producer = _FORMAT_PRODUCERS.get(format_name) if format_name is not None else None
-    if producer:
-        return producer(fake)
     pattern: str | None = schema.get("pattern")
+    if producer:
+        value = producer(fake)
+        label = f"format {format_name!r}"
+        _check_string_bounds(schema, value, emit, label)
+        if pattern is not None and not _pattern_matches(pattern, value):
+            emit(f"{label} value does not match pattern {pattern!r} — spec conflict")
+        return value
     if pattern is not None and _is_numeric_pattern(pattern):
-        return _numeric_string_value(schema, fake)
-    max_length: int | None = schema.get("maxLength")
+        value = _numeric_string_value(schema, fake, emit)
+        _check_string_bounds(schema, value, emit, None)
+        return value
+    max_length = schema.get("maxLength")
+    min_length = schema.get("minLength")
     if max_length is not None:
-        return fake.pystr(max_chars=max_length)
-    min_length: int | None = schema.get("minLength")
-    if min_length is not None:
-        return fake.pystr(min_chars=min_length, max_chars=min_length + _STRING_PADDING)
-    return fake.word()
+        value = fake.pystr(max_chars=max_length)
+    elif min_length is not None:
+        value = fake.pystr(min_chars=min_length, max_chars=min_length + _STRING_PADDING)
+    else:
+        value = fake.word()
+    _check_string_bounds(schema, value, emit, None)
+    if pattern is not None and not _pattern_matches(pattern, value):
+        emit(f"cannot honour pattern {pattern!r}; returning an arbitrary string")
+    return value
+
+
+def _pattern_matches(pattern: str, value: str) -> bool:
+    """Report whether a value matches a pattern, treating an invalid regex as a miss.
+
+    JSON Schema ``pattern`` is unanchored search semantics, not a full match.
+    """
+    try:
+        return re.search(pattern, value) is not None
+    except re.error:
+        return False
+
+
+def _check_string_bounds(
+    schema: Mapping[str, Any],
+    value: str,
+    emit: Callable[[str], None],
+    format_label: str | None,
+) -> None:
+    max_length = schema.get("maxLength")
+    if max_length is not None and len(value) > max_length:
+        if format_label is not None:
+            emit(
+                f"{format_label} kept over maxLength {max_length} "
+                f"({len(value)} chars) — spec conflict"
+            )
+        else:
+            emit(f"generated value is {len(value)} chars, over maxLength {max_length}")
+    min_length = schema.get("minLength")
+    if min_length is not None and len(value) < min_length:
+        if format_label is not None:
+            emit(
+                f"{format_label} kept under minLength {min_length} "
+                f"({len(value)} chars) — spec conflict"
+            )
+        else:
+            emit(f"generated value is {len(value)} chars, under minLength {min_length}")
 
 
 def _is_numeric_pattern(pattern: str) -> bool:
@@ -355,13 +404,16 @@ def _is_numeric_pattern(pattern: str) -> bool:
     return bool(regex.fullmatch("0") and regex.fullmatch("1.25") and not regex.fullmatch("abc"))
 
 
-def _numeric_string_value(schema: Mapping[str, Any], fake: Faker) -> str:
+def _numeric_string_value(
+    schema: Mapping[str, Any], fake: Faker, emit: Callable[[str], None]
+) -> str:
     low = float(schema.get("minimum", _NUMERIC_STRING_LOW))
     high = float(schema.get("maximum", _NUMERIC_STRING_HIGH))
     raw = fake.random.uniform(low, high)
     regex = re.compile(schema["pattern"])
     candidates = (f"{raw:.2f}", str(int(round(raw))))
     for candidate in candidates:
-        if regex.fullmatch(candidate):
+        if regex.search(candidate):
             return candidate
+    emit(f"no generated candidate matches {schema['pattern']!r}")
     return candidates[0]
