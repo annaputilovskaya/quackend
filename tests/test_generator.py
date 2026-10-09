@@ -1,6 +1,7 @@
 import datetime
 import inspect
 import json
+import math
 import re
 from types import MappingProxyType
 from typing import Any
@@ -8,7 +9,15 @@ from typing import Any
 import pytest
 from faker import Faker
 
-from quackend.generator import ARRAY_MAX, DEPTH_LIMIT, generate_object, generate_value
+from quackend.generator import (
+    ARRAY_MAX,
+    DEPTH_LIMIT,
+    _exclusive_shift,
+    _inclusive_float,
+    _inclusive_int,
+    generate_object,
+    generate_value,
+)
 
 
 @pytest.fixture()
@@ -359,3 +368,69 @@ def test_generate_value_any_of_without_example_names_the_first_branch(fake: Fake
     generate_value(schema, fake, messages.append)
 
     assert "used branch 1 of 2 in oneOf/anyOf" in messages
+
+
+def test_generate_value_openapi30_exclusive_minimum_stays_above_minimum(
+    fake: Faker,
+) -> None:
+    schema = {"type": "integer", "minimum": 10, "exclusiveMinimum": True, "maximum": 12}
+    for _ in range(20):
+        assert generate_value(schema, fake) > 10
+
+
+def test_generate_value_openapi30_false_flag_keeps_inclusive_minimum(fake: Faker) -> None:
+    schema = {"type": "integer", "minimum": 10, "exclusiveMinimum": False, "maximum": 10}
+    for _ in range(50):
+        assert generate_value(schema, fake) >= 10
+
+
+def test_generate_value_json_schema31_standalone_exclusive_is_strict(fake: Faker) -> None:
+    schema = {"type": "number", "exclusiveMinimum": 10.5}
+    for _ in range(20):
+        assert generate_value(schema, fake) > 10.5
+
+
+def test_generate_value_json_schema31_exclusive_respects_declared_minimum(
+    fake: Faker,
+) -> None:
+    schema = {"type": "integer", "minimum": 10, "exclusiveMinimum": 5}
+    for _ in range(20):
+        assert generate_value(schema, fake) >= 10
+
+
+def test_generate_value_exclusive_bounds_that_empty_the_range_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "integer", "minimum": 10, "exclusiveMinimum": True, "maximum": 10}
+
+    for _ in range(5):
+        generate_value(schema, fake, messages.append)
+
+    assert any("inverted integer bounds" in message for message in messages)
+
+
+def test_generate_value_exclusive_bound_of_wrong_type_raises(fake: Faker) -> None:
+    schema = {"type": "integer", "exclusiveMinimum": "yes"}
+
+    with pytest.raises(ValueError, match="exclusive bound must be a boolean or a number"):
+        generate_value(schema, fake)
+
+
+def test_inclusive_int_honours_dialects_and_integer_steps() -> None:
+    assert _inclusive_int(10, True, lower=True) == 11
+    assert _inclusive_int(10, False, lower=False) == 10
+    assert _inclusive_int(10, 5, lower=True) == 10
+    assert _inclusive_int(10, 15, lower=True) == 16
+    assert _inclusive_int(10, 10.5, lower=True) == 11
+    assert _inclusive_int(None, True, lower=True) is None
+    assert _inclusive_int(10, None, lower=True) == 10
+
+
+def test_inclusive_float_exclusive_is_strict_at_the_bound() -> None:
+    assert _inclusive_float(None, 10.5, lower=True) == math.nextafter(10.5, math.inf)
+    assert _inclusive_float(None, 10.5, lower=False) == math.nextafter(10.5, -math.inf)
+    assert _inclusive_float(10.0, True, lower=True) == math.nextafter(10.0, math.inf)
+
+
+def test_exclusive_shift_rejects_a_non_numeric_value() -> None:
+    with pytest.raises(ValueError, match="exclusive bound must be a boolean or a number"):
+        _exclusive_shift(["yes"], 10, lower=True, integer=True)
