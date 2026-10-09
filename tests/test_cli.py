@@ -77,9 +77,10 @@ def test_start_prints_warnings_through_the_console(
     assert "unsupported type 'weird-unknown-type'" in strip_ansi(result.stdout)
 
 
-def test_start_swallows_warnings_when_quiet(
+def test_start_reports_warnings_when_quiet(
     runner: CliRunner,
     patch_start: Callable[..., dict[str, object]],
+    strip_ansi: Callable[[str], str],
 ) -> None:
     start = patch_start(record_warnings=True)
     build_kwargs = start["build_app"]
@@ -88,8 +89,8 @@ def test_start_swallows_warnings_when_quiet(
     result = runner.invoke(app, ["start", "spec.yaml", "--quiet"])
 
     assert result.exit_code == 0
-    assert build_kwargs["warn"] is None
-    assert "weird-unknown-type" not in result.stdout
+    assert build_kwargs["warn"] is not None
+    assert "weird-unknown-type" in strip_ansi(result.stdout)
 
 
 def test_start_quiet_omits_the_route_table(

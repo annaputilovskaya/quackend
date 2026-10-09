@@ -99,7 +99,7 @@ def start(
         store,
         latency_ms=latency,
         fail_rate=fail_rate,
-        warn=None if quiet else _emit_warning,
+        warn=_emit_warning,
     )
     if not quiet:
         typer.echo(f"Starting quackend on http://{host}:{port} (Ctrl+C to stop)")

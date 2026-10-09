@@ -94,6 +94,8 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- **Breaking**: `--quiet` no longer suppresses fail-soft warnings; it does only
+  what the help and README promise (route table, banner, uvicorn log level).
 - `build_app()` without a `warn` callback reports fail-soft diagnostics through
   the `logging` package (`quackend` logger) instead of discarding them.
 - `build_app` takes an `rng` the simulated failures are drawn from, so
