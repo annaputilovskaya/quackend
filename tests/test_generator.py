@@ -434,3 +434,24 @@ def test_inclusive_float_exclusive_is_strict_at_the_bound() -> None:
 def test_exclusive_shift_rejects_a_non_numeric_value() -> None:
     with pytest.raises(ValueError, match="exclusive bound must be a boolean or a number"):
         _exclusive_shift(["yes"], 10, lower=True, integer=True)
+
+
+def test_generate_value_openapi30_exclusive_maximum_stays_below_maximum(fake: Faker) -> None:
+    schema = {"type": "integer", "minimum": 8, "exclusiveMaximum": True, "maximum": 10}
+
+    for _ in range(20):
+        assert 8 <= generate_value(schema, fake) <= 9
+
+
+def test_generate_value_json_schema31_exclusive_maximum_is_strict(fake: Faker) -> None:
+    schema = {"type": "number", "exclusiveMaximum": 10.5}
+
+    for _ in range(20):
+        assert generate_value(schema, fake) < 10.5
+
+
+def test_generate_value_exclusive_maximum_narrows_declared_number_maximum(fake: Faker) -> None:
+    schema = {"type": "number", "maximum": 10, "exclusiveMaximum": 5}
+
+    for _ in range(20):
+        assert generate_value(schema, fake) < 5
