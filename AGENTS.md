@@ -15,6 +15,20 @@ This file governs how AI agents work in this repository.
 - Create every feature branch from `develop` (never from `main`): `feat/<slug>` / `fix/<slug>`; open a PR into `develop` only when all checks pass.
 - `develop` must always stay green; `main` is release-only (`develop -> main` + tag).
 
+## Full-branch review follow-ups
+
+When a full-branch (or task) review subagent returns minor findings, do not accept
+them as reported:
+
+- Re-verify every minor against the code (reviewer reports are not trusted; check
+  the cited `file:line`).
+- Judge each one: real defect, false positive, or already mandated by the plan;
+  assign a priority.
+- Present the evaluated list to the user with a clear recommendation.
+- Never leave a minor undecided: either fix it in the current session, or record it
+  as a follow-up in the project backlog `docs/BACKLOG.md` with its `file:line`,
+  the reason it was deferred, and its priority.
+
 ## Mandatory checks before a PR
 
 Run the DoD script (see `docs/CONVENTIONS.md` §7) — it runs all five checks:
