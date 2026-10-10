@@ -459,6 +459,8 @@ def test_generate_value_non_string_pattern_warns(fake: Faker) -> None:
 
     assert isinstance(value, str)
     assert any("cannot honour pattern" in message for message in messages)
+
+
 def test_generate_value_openapi30_exclusive_minimum_stays_above_minimum(
     fake: Faker,
 ) -> None:
