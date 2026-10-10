@@ -15,7 +15,6 @@ from fastapi.responses import JSONResponse
 
 from quackend.loader import (
     Operation,
-    UnsupportedOperationError,
     is_templated,
     iter_operations,
     parse_route,
@@ -280,6 +279,17 @@ def _bind_resource(
 
 
 _Handler = Callable[[Operation, StoreProtocol, Request, Callable[[str], None]], Awaitable[Response]]
+
+
+class UnsupportedOperationError(ValueError):
+    """A spec declares an operation the mock refuses to serve.
+
+    The loader yields every verb a Path Item may declare, ``trace`` included;
+    this error is raised by :func:`build_app` when the declared method is not
+    in the verb table the mock can actually answer. It is a ``ValueError``
+    because it reports a spec that cannot be served as it stands.
+    """
+
 
 _VERBS: dict[str, _Handler] = {
     "get": _handle_get,
