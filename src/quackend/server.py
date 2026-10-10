@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from quackend.loader import (
     Operation,
+    SpecLoadError,
     is_templated,
     iter_operations,
     parse_route,
@@ -345,6 +346,8 @@ def build_app(
             [0, 1], because neither knob can do what it promises.
         UnsupportedOperationError: if the spec declares a verb the mock refuses
             to answer rather than drop it silently.
+        SpecLoadError: if the spec's ``info`` is not an object, because no
+            title can be read from a value that has no fields.
     """
     if latency_ms < 0:
         raise ValueError(f"latency_ms must not be negative, got {latency_ms}")
@@ -358,7 +361,11 @@ def build_app(
     operations = list(iter_operations(spec))
     _seed_resources(operations, resolved_store, emit)
 
-    app = FastAPI(title=(spec.get("info") or {}).get("title", "quackend"))
+    info = spec.get("info")
+    if info is not None and not isinstance(info, Mapping):
+        raise SpecLoadError(f"info must be an object, got {type(info).__name__} {info!r}")
+
+    app = FastAPI(title=(info or {}).get("title", "quackend"))
 
     @app.middleware("http")
     async def _simulate(
