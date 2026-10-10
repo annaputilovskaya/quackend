@@ -370,6 +370,97 @@ def test_generate_value_any_of_without_example_names_the_first_branch(fake: Fake
     assert "used branch 1 of 2 in oneOf/anyOf" in messages
 
 
+def test_generate_value_format_wins_over_max_length_but_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "format": "email", "maxLength": 10}
+
+    value = generate_value(schema, fake, messages.append)
+
+    assert "@" in value
+    assert any("format 'email' kept over maxLength 10" in message for message in messages)
+
+
+def test_generate_value_format_that_fails_min_length_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "format": "date", "minLength": 64}
+
+    generate_value(schema, fake, messages.append)
+
+    assert any("format 'date' kept under minLength 64" in message for message in messages)
+
+
+def test_generate_value_format_value_that_misses_the_pattern_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "format": "uuid", "pattern": r"^\d{4}$"}
+
+    value = generate_value(schema, fake, messages.append)
+
+    assert "-" in value
+    assert any("format 'uuid' value does not match pattern" in message for message in messages)
+
+
+def test_generate_value_unmatched_numeric_pattern_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "pattern": r"^(0|1\.25)$", "minimum": 50, "maximum": 100}
+
+    value = generate_value(schema, fake, messages.append)
+
+    assert any("no generated candidate matches" in message for message in messages)
+    assert isinstance(value, str)
+
+
+def test_generate_value_unsupported_pattern_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "pattern": r"^[A-Z]{3}$"}
+
+    generate_value(schema, fake, messages.append)
+
+    assert any("cannot honour pattern" in message for message in messages)
+
+
+def test_generate_value_max_length_branch_under_min_length_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "minLength": 5, "maxLength": 3}
+
+    generate_value(schema, fake, messages.append)
+
+    assert any("under minLength 5" in message for message in messages)
+
+
+def test_generate_value_numeric_string_is_checked_against_max_length(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {
+        "type": "string",
+        "pattern": r"^\d+(\.\d+)?$",
+        "minimum": 0,
+        "maximum": 9,
+        "maxLength": 3,
+    }
+
+    generate_value(schema, fake, messages.append)
+
+    assert any("over maxLength 3" in message for message in messages)
+
+
+def test_generate_value_unanchored_pattern_uses_search_semantics(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "format": "date", "pattern": r"\d{4}"}
+
+    generate_value(schema, fake, messages.append)
+
+    assert not any("does not match pattern" in message for message in messages)
+
+
+def test_generate_value_non_string_pattern_warns(fake: Faker) -> None:
+    messages: list[str] = []
+    schema = {"type": "string", "pattern": 123}
+
+    value = generate_value(schema, fake, messages.append)
+
+    assert isinstance(value, str)
+    assert any("cannot honour pattern" in message for message in messages)
+
+
 def test_generate_value_openapi30_exclusive_minimum_stays_above_minimum(
     fake: Faker,
 ) -> None:
