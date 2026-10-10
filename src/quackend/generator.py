@@ -397,7 +397,7 @@ def _is_numeric_pattern(pattern: str) -> bool:
     r"""Return whether a pattern describes a decimal-as-string value.
 
     A pattern counts as numeric when it accepts plain numbers like "0" and
-    "1.25"     while rejecting ordinary words, e.g. :code:`^\d*\.?\d*$`.
+    "1.25" while rejecting ordinary words, e.g. :code:`^\d*\.?\d*$`.
     """
     if not isinstance(pattern, str):
         return False
