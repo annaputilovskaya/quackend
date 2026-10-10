@@ -11,8 +11,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from quackend.loader import UnsupportedOperationError, load_openapi
-from quackend.server import build_app
+from quackend.loader import load_openapi
+from quackend.server import UnsupportedOperationError, build_app
 from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
 
 FIXTURES = Path(__file__).parent / "fixtures"

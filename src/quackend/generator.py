@@ -22,8 +22,8 @@ _BINARY_LENGTH = 8
 _STRING_PADDING = 20
 _NUMERIC_STRING_LOW = 0
 _NUMERIC_STRING_HIGH = 100
-_DEFAULT_INTEGER_MAX = 9_999
-_DEFAULT_NUMBER_MAX = 1_000_000
+_DEFAULT_INTEGER_SPAN = 9_999
+_DEFAULT_NUMBER_SPAN = 1_000_000
 _JSON_SCALARS = (str, int, float, bool, type(None))
 
 _FORMAT_PRODUCERS: dict[str, Callable[[Faker], str]] = {
@@ -265,7 +265,7 @@ def _ordered_bounds(
     low: _T | None,
     high: _T | None,
     low_default: _T,
-    default_high: _T,
+    upper_span: _T,
     emit: Callable[[str], None],
     what: str,
 ) -> tuple[_T, _T]:
@@ -281,18 +281,19 @@ def _ordered_bounds(
         low_default: the lower bound used when the schema declares none; it is
             typed like the bounds themselves so an integer range never passes
             through a float and lose precision above 2 ** 53.
-        default_high: the upper bound used when the schema declares none.
+        upper_span: the span added to the resolved lower bound when the schema
+            declares no maximum; the range is ``high = low + upper_span``,
+            so it is a step, never a ceiling.
         emit: the fail-soft callback; never None after the public entry point.
         what: the schema type name, used in the warning message.
 
     Returns:
-        A ``(low, high)`` pair with ``low <= high``.
+        A ``(low, high)`` pair with ``low <= high``, where ``high`` is
+        ``low + upper_span`` whenever the schema omits the maximum.
     """
-    if low is None and high is None:
-        return low_default, default_high
     low = low_default if low is None else low
     if high is None:
-        high = low + default_high
+        high = low + upper_span
     if low > high:
         low, high = high, low
         emit(f"inverted {what} bounds, swapped to {low:g}..{high:g}")
@@ -366,7 +367,7 @@ def _integer_value(
 ) -> int:
     low = _inclusive_int(schema.get("minimum"), schema.get("exclusiveMinimum"), lower=True)
     high = _inclusive_int(schema.get("maximum"), schema.get("exclusiveMaximum"), lower=False)
-    low_bound, high_bound = _ordered_bounds(low, high, 0, _DEFAULT_INTEGER_MAX, emit, "integer")
+    low_bound, high_bound = _ordered_bounds(low, high, 0, _DEFAULT_INTEGER_SPAN, emit, "integer")
     return fake.random_int(low_bound, high_bound)
 
 
@@ -377,7 +378,7 @@ def _number_value(
 ) -> float:
     low = _inclusive_float(schema.get("minimum"), schema.get("exclusiveMinimum"), lower=True)
     high = _inclusive_float(schema.get("maximum"), schema.get("exclusiveMaximum"), lower=False)
-    low_bound, high_bound = _ordered_bounds(low, high, 0.0, _DEFAULT_NUMBER_MAX, emit, "number")
+    low_bound, high_bound = _ordered_bounds(low, high, 0.0, _DEFAULT_NUMBER_SPAN, emit, "number")
     value: float = fake.random.uniform(low_bound, high_bound)
     return value
 

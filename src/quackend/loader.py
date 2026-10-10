@@ -14,7 +14,6 @@ __all__ = [
     "Operation",
     "Route",
     "SpecLoadError",
-    "UnsupportedOperationError",
     "is_templated",
     "iter_operations",
     "iter_success_responses",
@@ -37,15 +36,6 @@ _METHODS: tuple[str, ...] = (
     "options",
     "trace",
 )
-
-
-class UnsupportedOperationError(ValueError):
-    """A spec declares an operation the mock refuses to serve.
-
-    The loader owns which verbs a Path Item may declare, so the error naming a
-    verb with no honest mock lives next to the table of verbs it knows. It is a
-    ``ValueError`` because it reports a spec that cannot be served as it stands.
-    """
 
 
 class SpecLoadError(Exception):
