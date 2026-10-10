@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from quackend.loader import load_openapi
+from quackend.loader import SpecLoadError, load_openapi
 from quackend.server import UnsupportedOperationError, build_app
 from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
 
@@ -1068,3 +1068,10 @@ def test_build_app_rejects_an_out_of_range_fail_rate() -> None:
     for fail_rate in (1.5, -0.1):
         with pytest.raises(ValueError, match="fail_rate"):
             build_app(make_status_spec(), fail_rate=fail_rate)
+
+
+def test_build_app_with_non_mapping_info_raises_spec_load_error() -> None:
+    spec: Any = {"openapi": "3.1.0", "info": "not an object", "paths": {}}
+
+    with pytest.raises(SpecLoadError, match="str 'not an object'"):
+        build_app(spec)

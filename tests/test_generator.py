@@ -570,3 +570,25 @@ def test_generate_value_minimum_without_maximum_stays_within_the_span(
     for _ in range(20):
         value = generate_value({"type": "integer", "minimum": 100_000}, fake)
         assert 100_000 <= value <= 100_000 + _DEFAULT_INTEGER_SPAN
+
+
+def test_generate_value_true_is_an_empty_schema(fake: Faker) -> None:
+    messages: list[str] = []
+    truthy_schema: Any = True
+
+    assert generate_value(truthy_schema, fake, messages.append) is None
+    assert any("missing type" in message for message in messages)
+
+
+def test_generate_value_false_raises_value_error(fake: Faker) -> None:
+    false_schema: Any = False
+
+    with pytest.raises(ValueError, match="bool False"):
+        generate_value(false_schema, fake)
+
+
+def test_generate_value_string_schema_raises_value_error(fake: Faker) -> None:
+    text_schema: Any = "text"
+
+    with pytest.raises(ValueError, match="str 'text'"):
+        generate_value(text_schema, fake)

@@ -39,7 +39,7 @@ _METHODS: tuple[str, ...] = (
 
 
 class SpecLoadError(Exception):
-    """A spec could not be read, parsed, resolved or validated.
+    """A spec that cannot be read, parsed, resolved, validated, or served as declared.
 
     Wraps every failure from the spec toolchain so callers can catch one type
     instead of enumerating exception families that change between upstream
@@ -236,7 +236,7 @@ def iter_operations(spec: Mapping[str, Any]) -> Iterator[Operation]:
                 resource=route.resource,
                 params=route.params,
                 ok_status=first_success[0] if first_success is not None else 200,
-                item_schema=_item_schema(schema) if schema else None,
+                item_schema=_item_schema(schema) if schema is not None else None,
                 is_list=schema is not None and schema.get("type") == "array",
             )
 
@@ -263,13 +263,36 @@ def operation_response_schema(operation: Mapping[str, Any]) -> dict[str, Any] | 
         operation: a single OpenAPI operation object.
 
     Returns:
-        The response schema dict, or None when no 2xx JSON schema exists.
+        The response schema dict normalized to a plain ``dict``, or None when no
+        2xx JSON schema exists.
     """
     for _, response in iter_success_responses(operation):
         media = _json_media(response.get("content") or {})
-        schema: dict[str, Any] | None = media.get("schema") if media is not None else None
-        if schema is None:
-            schema = response.get("schema")
-        if schema:
-            return schema
+        raw: Any = media.get("schema") if media is not None else None
+        if raw is None:
+            raw = response.get("schema")
+        if raw is None:
+            continue
+        return _coerce_schema(raw)
     return None
+
+
+def _coerce_schema(raw: Any) -> dict[str, Any]:
+    """Read a raw ``schema`` value as an object, or refuse to serve it.
+
+    Args:
+        raw: the unparsed value of a response ``schema`` field.
+
+    Returns:
+        A concrete schema dict; ``True`` becomes an empty object schema, since
+        the boolean form accepts any object and ``{}`` would read as missing.
+
+    Raises:
+        SpecLoadError: if the value is neither an object nor ``True``, naming
+            its type and value so the spec author can find it.
+    """
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    if raw is True:
+        return {"type": "object", "properties": {}}
+    raise SpecLoadError(f"schema must be an object or true, got {type(raw).__name__} {raw!r}")

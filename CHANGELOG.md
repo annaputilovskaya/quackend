@@ -96,6 +96,7 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   Schema 3.1 numeric exclusivity is honoured together with a co-declared
   `minimum`/`maximum`, and `type: number` reads `exclusive*` at all; a
   non-numeric `exclusive*` value raises `ValueError` instead of being trusted.
+- `schema: true` in a response no longer crashes startup.
 
 ### Changed
 
@@ -144,3 +145,8 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   and an unsupportable `pattern` warns instead of being ignored.
 - **Breaking**: `UnsupportedOperationError` is imported from `quackend.server`,
   not `quackend.loader` — the refusal it names is made by the app, not the loader.
+- A response declaring `schema: false` or a non-schema value raises a clean
+  `SpecLoadError`/`ValueError` naming the type and value instead of failing
+  with `AttributeError` or silently serving `[]`.
+- An explicitly declared `schema: {}` is served as a schema (missing-type
+  warning → null rows) instead of falling back to `[]`.
