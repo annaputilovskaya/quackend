@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import re
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
@@ -298,17 +299,73 @@ def _ordered_bounds(
     return low, high
 
 
+Number = int | float
+
+
+def _exclusive_shift(
+    exclusive: object, bound: Number | None, *, lower: bool, integer: bool
+) -> Number | None:
+    """Return the bound that exclusivity implies, or None when it is inactive.
+
+    Args:
+        exclusive: the raw ``exclusiveMinimum``/``exclusiveMaximum`` value: an
+            OpenAPI 3.0 boolean flag, a JSON Schema 3.1 number, or anything else.
+        bound: the co-declared inclusive bound, used when the value is a 3.0 flag.
+        lower: True for a lower bound, False for an upper bound.
+        integer: True for ``type: integer`` (whole-number steps), False for
+            ``type: number`` (``math.nextafter`` for strictness).
+
+    Returns:
+        The shifted bound, or None when exclusivity declares no constraint
+        (absent key, explicit null, ``false`` flag, or ``true`` without a bound).
+
+    Raises:
+        ValueError: if ``exclusive`` is neither a boolean nor a number, since
+            such a spec cannot be served honestly.
+    """
+    if exclusive is None:
+        return None
+    if isinstance(exclusive, bool):
+        if not exclusive or bound is None:
+            return None
+        source: Number = bound
+    elif isinstance(exclusive, (int, float)):
+        source = exclusive
+    else:
+        raise ValueError(
+            f"exclusive bound must be a boolean or a number, "
+            f"got {type(exclusive).__name__}: {exclusive!r}"
+        )
+    if integer:
+        return math.floor(source) + 1 if lower else math.ceil(source) - 1
+    return math.nextafter(source, math.inf if lower else -math.inf)
+
+
+def _inclusive_int(bound: int | None, exclusive: object, *, lower: bool) -> int | None:
+    shifted = _exclusive_shift(exclusive, bound, lower=lower, integer=True)
+    if bound is None:
+        return None if shifted is None else int(shifted)
+    if shifted is None:
+        return bound
+    return max(bound, int(shifted)) if lower else min(bound, int(shifted))
+
+
+def _inclusive_float(bound: float | None, exclusive: object, *, lower: bool) -> float | None:
+    shifted = _exclusive_shift(exclusive, bound, lower=lower, integer=False)
+    if bound is None:
+        return None if shifted is None else float(shifted)
+    if shifted is None:
+        return bound
+    return max(bound, float(shifted)) if lower else min(bound, float(shifted))
+
+
 def _integer_value(
     schema: Mapping[str, Any],
     fake: Faker,
     emit: Callable[[str], None],
 ) -> int:
-    low: int | None = schema.get("minimum")
-    high: int | None = schema.get("maximum")
-    if schema.get("exclusiveMinimum") is not None:
-        low = schema["exclusiveMinimum"] + 1
-    if schema.get("exclusiveMaximum") is not None:
-        high = schema["exclusiveMaximum"] - 1
+    low = _inclusive_int(schema.get("minimum"), schema.get("exclusiveMinimum"), lower=True)
+    high = _inclusive_int(schema.get("maximum"), schema.get("exclusiveMaximum"), lower=False)
     low_bound, high_bound = _ordered_bounds(low, high, 0, _DEFAULT_INTEGER_MAX, emit, "integer")
     return fake.random_int(low_bound, high_bound)
 
@@ -318,10 +375,10 @@ def _number_value(
     fake: Faker,
     emit: Callable[[str], None],
 ) -> float:
-    low, high = _ordered_bounds(
-        schema.get("minimum"), schema.get("maximum"), 0.0, _DEFAULT_NUMBER_MAX, emit, "number"
-    )
-    value: float = fake.random.uniform(low, high)
+    low = _inclusive_float(schema.get("minimum"), schema.get("exclusiveMinimum"), lower=True)
+    high = _inclusive_float(schema.get("maximum"), schema.get("exclusiveMaximum"), lower=False)
+    low_bound, high_bound = _ordered_bounds(low, high, 0.0, _DEFAULT_NUMBER_MAX, emit, "number")
+    value: float = fake.random.uniform(low_bound, high_bound)
     return value
 
 
