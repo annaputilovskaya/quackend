@@ -352,3 +352,37 @@ def test_load_openapi_reports_one_failure_family(tmp_path: Path, case: str) -> N
     }
     assert type(info.value.__cause__).__name__ in str(info.value)
     assert "\n" not in str(info.value)
+
+
+def _json_operation(raw: Any) -> dict[str, Any]:
+    return {"responses": {"200": {"content": {"application/json": {"schema": raw}}}}}
+
+
+def test_operation_response_schema_true_is_an_empty_object_schema() -> None:
+    assert operation_response_schema(_json_operation(True)) == {
+        "type": "object",
+        "properties": {},
+    }
+
+
+def test_operation_response_schema_false_raises_spec_load_error() -> None:
+    with pytest.raises(SpecLoadError, match="bool False"):
+        operation_response_schema(_json_operation(False))
+
+
+def test_operation_response_schema_non_schema_value_raises_spec_load_error() -> None:
+    with pytest.raises(SpecLoadError, match="str 'text'"):
+        operation_response_schema(_json_operation("text"))
+
+
+def test_operation_response_schema_empty_object_is_served_as_a_schema() -> None:
+    assert operation_response_schema(_json_operation({})) == {}
+
+
+def test_iter_operations_serves_an_empty_schema_instead_of_dropping_it() -> None:
+    spec = {"paths": {"/things": {"get": _json_operation({})}}}
+
+    [operation] = list(iter_operations(spec))
+
+    assert operation.item_schema == {}
+    assert operation.is_list is False
