@@ -123,7 +123,7 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   success and an empty body, and a declared `OPTIONS` answers `204` with an
   `Allow` header listing the methods the app serves for that path. **Breaking**:
   a declared `TRACE` now makes `build_app` raise
-  `loader.UnsupportedOperationError` instead of returning an app that answers
+  `server.UnsupportedOperationError` instead of returning an app that answers
   `405`, and the route table lists `TRACE` too.
 - `mypy` checks `tests/` as strictly as `src/`, and the `tests.*` override that
   the old gate never executed is gone.
@@ -142,3 +142,5 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   (`format 'email' kept over maxLength 10 (25 chars) — spec conflict`); a
   numeric `pattern` that matches neither candidate warns before falling back,
   and an unsupportable `pattern` warns instead of being ignored.
+- **Breaking**: `UnsupportedOperationError` is imported from `quackend.server`,
+  not `quackend.loader` — the refusal it names is made by the app, not the loader.
