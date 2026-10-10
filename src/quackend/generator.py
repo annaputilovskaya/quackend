@@ -74,6 +74,10 @@ def generate_value(
 
     Returns:
         A generated value, or None when the schema is missing or unsupported.
+
+    Raises:
+        ValueError: if ``schema`` is neither a JSON Schema object nor ``True``,
+            because such a schema cannot be served honestly.
     """
     emit = warn if warn is not None else _no_warn
     return _generate_value(schema, fake, 0, emit, depth_limit, array_max)
@@ -102,7 +106,16 @@ def _generate_value(
 
     Returns:
         A generated value, or None when the schema is missing or unsupported.
+
+    Raises:
+        ValueError: if ``schema`` is neither a JSON Schema object nor ``True``,
+            because such a schema cannot be served honestly.
     """
+    raw: Any = schema
+    if raw is True:
+        schema = {}
+    elif not isinstance(raw, Mapping):
+        raise ValueError(f"schema must be an object or true, got {type(raw).__name__} {raw!r}")
     example = schema.get("example")
     if example is not None:
         return _jsonable(copy.deepcopy(example), emit)
