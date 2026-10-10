@@ -91,6 +91,11 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   instead of `500`.
 - Every operation answers the success status its own spec declares, a declared
   `204` answers with an empty body, and `DELETE` removes the item it addresses.
+- OpenAPI 3.0 boolean `exclusiveMinimum`/`exclusiveMaximum` no longer add
+  arithmetic to the bound (`True + 1` produced values below `minimum`), JSON
+  Schema 3.1 numeric exclusivity is honoured together with a co-declared
+  `minimum`/`maximum`, and `type: number` reads `exclusive*` at all; a
+  non-numeric `exclusive*` value raises `ValueError` instead of being trusted.
 
 ### Changed
 
