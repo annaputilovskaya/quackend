@@ -10,9 +10,9 @@ import pytest
 from faker import Faker
 
 from quackend.generator import (
+    _DEFAULT_INTEGER_SPAN,
     ARRAY_MAX,
     DEPTH_LIMIT,
-    _DEFAULT_INTEGER_MAX,
     _exclusive_shift,
     _inclusive_float,
     _inclusive_int,
@@ -551,18 +551,16 @@ def test_generate_value_exclusive_maximum_narrows_declared_number_maximum(fake: 
 
 
 def test_ordered_bounds_span_is_added_to_a_declared_minimum() -> None:
-    assert _ordered_bounds(
-        100_000, None, 0, _DEFAULT_INTEGER_MAX, lambda _m: None, "integer"
-    ) == (
+    assert _ordered_bounds(100_000, None, 0, _DEFAULT_INTEGER_SPAN, lambda _m: None, "integer") == (
         100_000,
-        100_000 + _DEFAULT_INTEGER_MAX,
+        100_000 + _DEFAULT_INTEGER_SPAN,
     )
 
 
 def test_ordered_bounds_both_absent_use_the_declared_defaults() -> None:
-    assert _ordered_bounds(None, None, 0, _DEFAULT_INTEGER_MAX, lambda _m: None, "integer") == (
+    assert _ordered_bounds(None, None, 0, _DEFAULT_INTEGER_SPAN, lambda _m: None, "integer") == (
         0,
-        _DEFAULT_INTEGER_MAX,
+        _DEFAULT_INTEGER_SPAN,
     )
 
 
@@ -571,4 +569,4 @@ def test_generate_value_minimum_without_maximum_stays_within_the_span(
 ) -> None:
     for _ in range(20):
         value = generate_value({"type": "integer", "minimum": 100_000}, fake)
-        assert 100_000 <= value <= 100_000 + _DEFAULT_INTEGER_MAX
+        assert 100_000 <= value <= 100_000 + _DEFAULT_INTEGER_SPAN
