@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import urllib.parse
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,28 @@ _METHODS: tuple[str, ...] = (
     "options",
     "trace",
 )
+_URL_SCHEMES = ("http", "https")
+_MAX_SPEC_BYTES = 8 * 1_048_576  # 8 MiB
+_TIMEOUT_SECONDS = 10.0
+
+
+def _checked_url(source: str) -> str | None:
+    """Return a fetchable URL, or None for a source prance reads by itself.
+
+    Local sources have no scheme, the ``file`` scheme, or a one-letter
+    (Windows drive-letter) scheme; ``http``/``https`` URLs are returned
+    unchanged so the bounded fetcher can pick them up.
+
+    Raises:
+        SpecLoadError: for a scheme outside the allow-list, naming the scheme
+            so a spec author can find which URL was refused.
+    """
+    scheme = urllib.parse.urlparse(source).scheme
+    if scheme in (None, "", "file") or len(scheme) == 1:
+        return None
+    if scheme in _URL_SCHEMES:
+        return source
+    raise SpecLoadError(f"Refusing to fetch {scheme!r}: only http/https URLs are allowed")
 
 
 class SpecLoadError(Exception):

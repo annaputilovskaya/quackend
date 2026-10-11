@@ -6,6 +6,7 @@ import pytest
 from quackend.loader import (
     Route,
     SpecLoadError,
+    _checked_url,
     is_templated,
     iter_operations,
     iter_success_responses,
@@ -386,3 +387,33 @@ def test_iter_operations_serves_an_empty_schema_instead_of_dropping_it() -> None
 
     assert operation.item_schema == {}
     assert operation.is_list is False
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "petstore.yaml",
+        "./petstore.yaml",
+        "C:\\specs\\petstore.yaml",
+        "c:/specs/petstore.yaml",
+        "file:///C:/specs/petstore.yaml",
+        "/etc/quackend/petstore.yaml",
+        "",
+    ],
+)
+def test_checked_url_treats_local_sources_as_unfetched(source: str) -> None:
+    assert _checked_url(source) is None
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["http://example.org/petstore.yaml", "https://example.org/petstore.yaml"],
+)
+def test_checked_url_keeps_allowed_urls(source: str) -> None:
+    assert _checked_url(source) == source
+
+
+@pytest.mark.parametrize("scheme", ["ftp", "gopher", "data"])
+def test_checked_url_refuses_non_allowed_schemes(scheme: str) -> None:
+    with pytest.raises(SpecLoadError, match="only http/https"):
+        _checked_url(f"{scheme}://example.org/spec.yaml")
