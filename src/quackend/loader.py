@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 import urllib.parse
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import prance
+import requests
+from prance.util.url import ResolutionError, urlresource
 
 __all__ = [
     "Operation",
@@ -59,6 +61,62 @@ def _checked_url(source: str) -> str | None:
     if scheme in _URL_SCHEMES:
         return source
     raise SpecLoadError(f"Refusing to fetch {scheme!r}: only http/https URLs are allowed")
+
+
+def _wrap_fetch_url_text(
+    original: Callable[..., tuple[str, str]],
+) -> Callable[..., tuple[str, str]]:
+    """Bound prance's single network entry point for one parse.
+
+    prance 26.7.19.0 has no ``url_fetcher`` parameter and reads every file or
+    ``$ref`` through ``prance.util.url.fetch_url_text`` (``__init__.py:131-135``,
+    ``resolver.py:623``, ``translator.py:100``). Replacing that module global
+    around the parser is a deliberate bridge to prance — re-check on an upgrade.
+    Local sources are delegated untouched; ``http``/``https`` are fetched with
+    a timeout, a size cap and no redirects; every other scheme raises the same
+    ``ResolutionError`` prance itself raises for an unroutable reference, so
+    ``load_openapi`` wraps the failure exactly once.
+    """
+
+    def fetch(url: urllib.parse.SplitResult, cache: Any, encoding: Any = None) -> tuple[str, str]:
+        scheme = url.scheme
+        if scheme in (None, "", "file") or scheme == "python":
+            return original(url, cache, encoding)
+        if scheme not in _URL_SCHEMES:
+            raise ResolutionError(f"Refusing to fetch {scheme!r}: only http/https URLs are allowed")
+        try:
+            response = requests.get(
+                url.geturl(),
+                timeout=_TIMEOUT_SECONDS,
+                stream=True,
+                allow_redirects=False,
+            )
+            response.raise_for_status()
+            if 300 <= response.status_code < 400:
+                # requests reports 3xx as ok; refuse the redirect body here.
+                raise requests.HTTPError(
+                    f"{response.status_code} redirect refused", response=response
+                )
+        except requests.RequestException as exc:
+            raise ResolutionError(f"Cannot fetch URL {url.geturl()!r}: {exc}") from exc
+        declared = response.headers.get("content-length")
+        if declared is not None and declared.isdigit() and int(declared) > _MAX_SPEC_BYTES:
+            raise ResolutionError(f"URL {url.geturl()!r} is over the {_MAX_SPEC_BYTES}-byte limit")
+        raw_body = response.raw
+        if raw_body is None:
+            raise ResolutionError(f"Cannot fetch URL {url.geturl()!r}: no body stream")
+        try:
+            raw = raw_body.read(_MAX_SPEC_BYTES + 1, decode_content=True)
+        except (requests.RequestException, OSError) as exc:
+            raise ResolutionError(f"Cannot fetch URL {url.geturl()!r}: {exc}") from exc
+        if len(raw) > _MAX_SPEC_BYTES:
+            raise ResolutionError(f"URL {url.geturl()!r} is over the {_MAX_SPEC_BYTES}-byte limit")
+        content = raw.decode("utf-8")
+        content_type = response.headers.get("content-type", "text/plain")
+        cache["text_" + urlresource(url)] = (content, content_type)
+        return content, content_type
+
+    return fetch
 
 
 class SpecLoadError(Exception):
