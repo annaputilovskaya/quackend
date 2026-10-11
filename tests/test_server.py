@@ -1142,3 +1142,15 @@ def test_unservable_operation_does_not_seed_a_collection() -> None:
 
     assert response.status_code == 501
     assert store.get_all("orgs/orgA/members") == []
+
+
+def test_build_app_warns_once_per_unservable_operation() -> None:
+    messages: list[str] = []
+
+    build_app(make_unservable_spec(), warn=messages.append)
+
+    assert messages == [
+        "GET /orders declares no 2xx response; quackend will not invent one",
+        "POST /orders declares text/csv; quackend only mocks application/json",
+        "DELETE /reports declares no 2xx response; quackend will not invent one",
+    ]

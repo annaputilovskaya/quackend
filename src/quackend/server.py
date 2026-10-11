@@ -376,6 +376,21 @@ def build_app(
     operations = list(iter_operations(spec))
     _seed_resources(operations, resolved_store, emit)
 
+    for operation in operations:
+        if operation.ok_status is None:
+            emit(
+                f"{operation.method.upper()} {operation.path} declares no 2xx response; "
+                "quackend will not invent one"
+            )
+        elif operation.item_schema is None and operation.media_type not in (
+            None,
+            "application/json",
+        ):
+            emit(
+                f"{operation.method.upper()} {operation.path} declares "
+                f"{operation.media_type}; quackend only mocks application/json"
+            )
+
     info = spec.get("info")
     if info is not None and not isinstance(info, Mapping):
         raise SpecLoadError(f"info must be an object, got {type(info).__name__} {info!r}")
