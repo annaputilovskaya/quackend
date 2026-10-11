@@ -1,11 +1,19 @@
+import functools
+import threading
+import urllib.parse
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 import pytest
+import requests as requests_lib
+from prance.util.url import ResolutionError
 
+from quackend import loader
 from quackend.loader import (
     Route,
     SpecLoadError,
+    _checked_url,
     is_templated,
     iter_operations,
     iter_success_responses,
@@ -386,3 +394,256 @@ def test_iter_operations_serves_an_empty_schema_instead_of_dropping_it() -> None
 
     assert operation.item_schema == {}
     assert operation.is_list is False
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "petstore.yaml",
+        "./petstore.yaml",
+        "C:\\specs\\petstore.yaml",
+        "c:/specs/petstore.yaml",
+        "file:///C:/specs/petstore.yaml",
+        "/etc/quackend/petstore.yaml",
+        "",
+    ],
+)
+def test_checked_url_treats_local_sources_as_unfetched(source: str) -> None:
+    assert _checked_url(source) is None
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["http://example.org/petstore.yaml", "https://example.org/petstore.yaml"],
+)
+def test_checked_url_keeps_allowed_urls(source: str) -> None:
+    assert _checked_url(source) == source
+
+
+@pytest.mark.parametrize("scheme", ["ftp", "gopher", "data"])
+def test_checked_url_refuses_non_allowed_schemes(scheme: str) -> None:
+    with pytest.raises(SpecLoadError, match="only http/https"):
+        _checked_url(f"{scheme}://example.org/spec.yaml")
+
+
+class _FakeResponse:
+    """A requests.Response double exercising the wrapper's contract."""
+
+    def __init__(
+        self,
+        *,
+        status: int = 200,
+        body: bytes = b"",
+        read_error: Exception | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.status_code = status
+        self._body = body
+        self._read_error = read_error
+        self.headers = headers or {}
+
+    def raise_for_status(self) -> None:
+        # Mirrors requests: raise for 4xx/5xx, stay silent for 2xx and 3xx.
+        if self.status_code >= 400:
+            raise requests_lib.HTTPError(f"{self.status_code} Client Error")
+
+    @property
+    def raw(self) -> "_FakeResponse":
+        return self
+
+    def read(self, amt: int, decode_content: bool = True) -> bytes:
+        if self._read_error is not None:
+            raise self._read_error
+        return self._body
+
+
+def _original_fetch(url: object, cache: object, encoding: object = None) -> tuple[str, str]:
+    return "original content", "text/plain"
+
+
+def _wrapper() -> Any:
+    return loader._wrap_fetch_url_text(_original_fetch)
+
+
+def _http_url() -> urllib.parse.ParseResult:
+    return urllib.parse.urlparse("http://example.org/spec.yaml")
+
+
+def test_wrapper_delegates_file_urls_to_the_original() -> None:
+    url = urllib.parse.urlparse("file:///C:/specs/petstore.yaml")
+
+    assert _wrapper()(url, {}) == ("original content", "text/plain")
+
+
+def test_wrapper_fetches_bounded_and_fills_the_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _FakeResponse(body=b"openapi: 3.0.0\n", headers={"content-type": "text/yaml"})
+    monkeypatch.setattr(requests_lib, "get", lambda *_a, **_k: response)
+    cache: dict[str, Any] = {}
+
+    content, content_type = _wrapper()(_http_url(), cache)
+
+    assert content == "openapi: 3.0.0\n"
+    assert content_type == "text/yaml"
+    assert cache["text_http://example.org/spec.yaml"] == ("openapi: 3.0.0\n", "text/yaml")
+
+
+def test_wrapper_passes_the_timeout_and_blocks_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kwargs: dict[str, Any] = {}
+    monkeypatch.setattr(requests_lib, "get", lambda *_a, **kw: kwargs.update(kw) or _FakeResponse())
+
+    _wrapper()(_http_url(), {})
+
+    assert kwargs == {
+        "timeout": loader._TIMEOUT_SECONDS,
+        "stream": True,
+        "allow_redirects": False,
+    }
+
+
+def test_wrapper_turns_http_errors_into_resolution_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(requests_lib, "get", lambda *_a, **_k: _FakeResponse(status=404))
+
+    with pytest.raises(ResolutionError, match="404") as info:
+        _wrapper()(_http_url(), {})
+
+    assert isinstance(info.value.__cause__, requests_lib.HTTPError)
+
+
+def test_wrapper_refuses_a_redirect_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # requests reports a 3xx as ok and raise_for_status() ignores it, so the
+    # wrapper must refuse 3xx itself instead of parsing the redirect body.
+    monkeypatch.setattr(requests_lib, "get", lambda *_a, **_k: _FakeResponse(status=302))
+
+    with pytest.raises(ResolutionError, match="Cannot fetch URL") as info:
+        _wrapper()(_http_url(), {})
+
+    assert isinstance(info.value.__cause__, requests_lib.HTTPError)
+
+
+def test_wrapper_refuses_a_body_whose_length_exceeds_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = b"openapi: 3.0.0\n"
+    monkeypatch.setattr(
+        requests_lib,
+        "get",
+        lambda *_a, **_k: _FakeResponse(
+            body=body, headers={"content-length": str(loader._MAX_SPEC_BYTES + 1)}
+        ),
+    )
+
+    with pytest.raises(ResolutionError, match="over the 8388608-byte limit"):
+        _wrapper()(_http_url(), {})
+
+
+def test_wrapper_refuses_a_streamed_body_that_exceeds_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _FakeResponse(body=b"x" * (loader._MAX_SPEC_BYTES + 1))
+    monkeypatch.setattr(requests_lib, "get", lambda *_a, **_k: response)
+
+    with pytest.raises(ResolutionError, match="over the 8388608-byte limit"):
+        _wrapper()(_http_url(), {})
+
+
+def test_wrapper_refuses_schemes_outside_the_allow_list() -> None:
+    url = urllib.parse.urlparse("ftp://example.org/spec.yaml")
+
+    with pytest.raises(ResolutionError, match="only http/https"):
+        _wrapper()(url, {})
+
+
+def test_wrapper_wraps_transport_errors_from_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        requests_lib, "get", lambda *_a, **_k: (_ for _ in ()).throw(requests_lib.Timeout())
+    )
+
+    with pytest.raises(ResolutionError, match="Cannot fetch URL") as info:
+        _wrapper()(_http_url(), {})
+
+    assert isinstance(info.value.__cause__, requests_lib.Timeout)
+
+
+class _QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def _serve_directory(directory: Path) -> tuple[ThreadingHTTPServer, threading.Thread]:
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        functools.partial(_QuietHandler, directory=str(directory)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def test_load_openapi_fetches_a_url_spec_with_an_external_ref(tmp_path: Path) -> None:
+    (tmp_path / "items.yaml").write_text(
+        "type: array\nitems:\n  type: object\n  properties:\n    name:\n      type: string\n",
+        encoding="utf-8",
+    )
+    server, thread = _serve_directory(tmp_path)
+    try:
+        port = server.server_address[1]
+        (tmp_path / "root.yaml").write_text(
+            f"""openapi: 3.0.0
+info:
+  title: url probe
+  version: "1"
+paths:
+  /things:
+    get:
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "http://127.0.0.1:{port}/items.yaml"
+""",
+            encoding="utf-8",
+        )
+        spec = load_openapi(f"http://127.0.0.1:{port}/root.yaml")
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    schema = spec["paths"]["/things"]["get"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    assert schema["type"] == "array"
+
+
+def test_load_openapi_refuses_a_non_http_scheme_before_fetching() -> None:
+    with pytest.raises(SpecLoadError, match="Refusing to fetch 'ftp'") as info:
+        load_openapi("ftp://example.org/spec.yaml")
+
+    assert info.value.__cause__ is None
+    assert str(info.value).count("Refusing to fetch 'ftp'") == 1
+
+
+def test_load_openapi_wraps_a_broken_url_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise requests_lib.Timeout("no route to host")
+
+    monkeypatch.setattr(requests_lib, "get", refuse)
+
+    with pytest.raises(SpecLoadError, match="ResolutionError: Cannot fetch URL") as info:
+        load_openapi("http://example.org/spec.yaml")
+
+    assert isinstance(info.value.__cause__, ResolutionError)
+    assert str(info.value).count("Cannot fetch URL") == 1

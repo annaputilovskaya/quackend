@@ -18,6 +18,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "faker>=24",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
@@ -92,6 +93,10 @@ warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = "prance"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "prance.*"
 ignore_missing_imports = true
 
 [tool.importlinter]
