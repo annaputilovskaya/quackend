@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import typer
@@ -19,14 +20,28 @@ app = typer.Typer(add_completion=False)
 console = Console()
 warn_console = Console(stderr=True)
 
+_CONTROL = re.compile(
+    r"\x1b\[[0-9;]*[A-Za-z]"
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    r"|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"
+)
+
+
+def _one_line(message: str) -> str:
+    """Flatten a spec-controlled message so it cannot forge terminal state or log lines."""
+    return _CONTROL.sub(" ", message).replace("\r", " ").replace("\n", " ")
+
 
 def _emit_warning(message: str) -> None:
-    """Print a generator warning on stderr.
+    """Print a generator warning on stderr, flattened to one safe line.
 
     Args:
         message: the fail-soft message reported by the library.
     """
-    warn_console.print(f"[yellow][WARNING][/yellow] {escape_markup(message)}")
+    warn_console.print(
+        f"[yellow][WARNING][/yellow] {escape_markup(_one_line(message))}",
+        soft_wrap=True,
+    )
 
 
 @app.callback()

@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -215,3 +216,78 @@ def test_cli_start_refuses_a_non_http_url_and_exits_2(runner: CliRunner) -> None
     assert "Traceback" not in result.output
     assert len(result.stderr.strip().splitlines()) == 1
     assert "Refusing to fetch 'ftp'" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("raw", "flat"),
+    [
+        ("\x1b[31mred\x1b[0m", " red "),
+        ("\x1b]0;title\x07after", " after"),
+        ("a\x01b", "a b"),
+        ("a\nb", "a b"),
+        ("a\rb", "a b"),
+        ("plain text", "plain text"),
+    ],
+)
+def test_one_line_neutralises_terminal_control_sequences(raw: str, flat: str) -> None:
+    assert cli_module._one_line(raw) == flat
+
+
+def test_emit_warning_flattens_a_control_laden_message(
+    capsys: pytest.CaptureFixture[str], strip_ansi: Callable[[str], str]
+) -> None:
+    cli_module._emit_warning("\x1b]0;owned\x07first\nINFO:     mock failed")
+
+    err = strip_ansi(capsys.readouterr().err)
+
+    assert "\x1b" not in err
+    assert err.count("\n") == 1  # only the trailing newline Rich appends
+    assert err.strip().endswith("first INFO:     mock failed")
+
+
+def test_start_flattens_a_spec_controlled_warning_into_one_line(
+    runner: CliRunner,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    strip_ansi: Callable[[str], str],
+) -> None:
+    # The injection vector is the store's ``"{resource}: {message}"`` prefix: a
+    # generator message ``!r``-escapes its spec values, but the resource name is
+    # interpolated raw. A path key with a newline therefore reaches the CLI
+    # warning as a raw line break unless ``_one_line`` flattens it.
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "forge", "version": "1.0.0"},
+        "paths": {
+            "/items\nINFO:     mock failed - check your config": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"x": {}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+    path = tmp_path / "forge.json"
+    path.write_text(json.dumps(spec), encoding="utf-8")
+    monkeypatch.setattr("uvicorn.run", lambda *_a, **_k: None)
+
+    result = runner.invoke(app, ["start", str(path), "--quiet"])
+
+    assert result.exit_code == 0
+    stderr = strip_ansi(result.stderr)
+    assert "INFO:" in stderr
+    forged = [line for line in stderr.splitlines() if line.strip()]
+    assert forged  # at least one warning was emitted
+    for line in forged:
+        assert line.lstrip().startswith("[WARNING]")  # no line forges a fresh log record
