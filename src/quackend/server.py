@@ -180,19 +180,27 @@ async def _handle_delete(
 
 
 def _served_methods(request: Request) -> set[str]:
-    """Return the verbs this app registers for the requested path.
+    """Return the verbs this app registers for the requested route.
+
+    A parameterised path never equals the concrete request path, so every
+    registered route is compared against the *template* of the route the request
+    matched (``request.scope["route"].path``) instead. This is what lets OPTIONS
+    list the verbs of a path such as ``/orgs/{org_id}/members``.
 
     Args:
         request: the incoming request.
 
     Returns:
-        The lowercased methods of every registered route serving that exact path.
+        The lowercased methods of every registered route serving the matched
+        route's path template.
     """
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
     return {
         method.lower()
-        for route in request.app.routes
-        if getattr(route, "path", None) == request.url.path
-        for method in getattr(route, "methods", ())
+        for candidate in request.app.routes
+        if getattr(candidate, "path", None) == path
+        for method in getattr(candidate, "methods", ())
     }
 
 
