@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from quackend import store as store_module
 from quackend.loader import SpecLoadError, load_openapi
 from quackend.server import UnsupportedOperationError, build_app
 from quackend.store import COLLECTION_SIZE, QuackStore, StoreProtocol
@@ -1222,3 +1223,75 @@ def test_chunked_body_over_the_cap_returns_413() -> None:
     response = client.post("/jobs", content=body, headers={"content-type": "application/json"})
 
     assert response.status_code == 413
+
+
+def test_paramless_get_returns_404_over_the_resource_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(store_module, "_MAX_RESOURCES", 1)
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "cap", "version": "1.0.0"},
+        "paths": {
+            "/telemetry": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"ts": {"type": "string"}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+    store = QuackStore()
+    store.ensure("existing", {"type": "object", "properties": {"name": {"type": "string"}}})
+
+    client = TestClient(build_app(spec, store))
+    response = client.get("/telemetry")
+
+    assert response.status_code == 404
+
+
+def test_templated_get_returns_404_over_the_resource_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(store_module, "_MAX_RESOURCES", 1)
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "cap", "version": "1.0.0"},
+        "paths": {
+            "/orgs/{org_id}/members": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"name": {"type": "string"}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+    store = QuackStore()
+    store.ensure("existing", {"type": "object", "properties": {"name": {"type": "string"}}})
+
+    client = TestClient(build_app(spec, store))
+    response = client.get("/orgs/orgA/members")
+
+    assert response.status_code == 404

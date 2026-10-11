@@ -135,6 +135,8 @@ async def _handle_get(
             payload = store.first_or_create(
                 operation.resource, key, operation.item_schema, warn=warn
             )
+            if payload is None:
+                return JSONResponse({"error": "not found"}, status_code=404)
         return _ok_response(payload, operation.ok_status)
     if operation.item_schema is not None:
         payload = store.first(operation.resource)
@@ -142,6 +144,8 @@ async def _handle_get(
             payload = store.first_or_create(
                 operation.resource, "", operation.item_schema, warn=warn
             )
+            if payload is None:
+                return JSONResponse({"error": "not found"}, status_code=404)
         return _ok_response(payload, operation.ok_status)
     return _ok_response(store.get_all(operation.resource), operation.ok_status)
 

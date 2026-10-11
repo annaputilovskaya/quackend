@@ -15,6 +15,7 @@ __all__ = ["COLLECTION_SIZE", "QuackStore", "StoreConfig", "StoreProtocol"]
 
 COLLECTION_SIZE = 10
 _MAX_KEYS_PER_RESOURCE = 1_000
+_MAX_RESOURCES = 1_000
 
 
 def _no_warn(_message: str) -> None:
@@ -107,7 +108,7 @@ class StoreProtocol(Protocol):
         key: str,
         schema: Mapping[str, Any],
         warn: Callable[[str], None] | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Return an existing item or generate one with the given key.
 
         Args:
@@ -117,7 +118,8 @@ class StoreProtocol(Protocol):
             warn: an optional callback receiving generator warnings.
 
         Returns:
-            A copy of the stored item, generated on demand when the key is missing.
+            A copy of the stored item, generated on demand when the key is missing,
+            or None when the store is already at the resource cap.
         """
 
     def create(self, resource: str, data: Mapping[str, Any]) -> dict[str, Any]:
@@ -238,6 +240,10 @@ class QuackStore:
             self._warned.add(seen)
             emit(f"{resource}: {message}")
 
+        if len(self._collections) >= _MAX_RESOURCES:
+            on_warn(f"reached {_MAX_RESOURCES} resources; not creating more")
+            return
+
         items: dict[str, dict[str, Any]] = {}
         for i in range(1, self._config.collection_size + 1):
             item = self._generate(schema, on_warn)
@@ -265,7 +271,7 @@ class QuackStore:
         key: str,
         schema: Mapping[str, Any],
         warn: Callable[[str], None] | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Return an existing item or generate one with the given key.
 
         Args:
@@ -275,7 +281,8 @@ class QuackStore:
             warn: an optional callback receiving generator warnings.
 
         Returns:
-            A copy of the stored item, generated on demand when the key is missing.
+            A copy of the stored item, generated on demand when the key is missing,
+            or None when the store is already at the resource cap.
         """
         existing = self.get(resource, key)
         if existing is not None:
@@ -291,15 +298,18 @@ class QuackStore:
             emit(f"{resource}: {message}")
 
         collection = self._collections.get(resource)
-        if collection is not None and len(collection) >= _MAX_KEYS_PER_RESOURCE:
+        if collection is None:
+            if len(self._collections) >= _MAX_RESOURCES:
+                on_warn(f"reached {_MAX_RESOURCES} resources; not creating more")
+                return None
+            collection = {}
+            self._collections[resource] = collection
+        elif len(collection) >= _MAX_KEYS_PER_RESOURCE:
             on_warn(f"reached {_MAX_KEYS_PER_RESOURCE} lazily created keys; not creating more")
             return copy.deepcopy(collection[sorted(collection)[0]])
 
         item = self._generate(schema, on_warn)
         item["id"] = key
-        if collection is None:
-            collection = {}
-            self._collections[resource] = collection
         collection[key] = item
         return copy.deepcopy(item)
 

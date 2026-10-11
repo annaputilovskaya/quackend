@@ -125,6 +125,7 @@ def test_first_or_create_persists_the_generated_item(store: QuackStore) -> None:
     stored = store.get("widgets", "abc")
     again = store.first_or_create("widgets", "abc", schema)
 
+    assert created is not None
     assert created["id"] == "abc"
     # Persistence, not object identity: the second call has to hand back the very
     # item the store holds, otherwise it regenerated a fresh name under the same
@@ -138,6 +139,7 @@ def test_first_or_create_returns_seeded_item(store: QuackStore) -> None:
 
     item = store.first_or_create("widgets", "3", {"type": "object"})
 
+    assert item is not None
     assert item["id"] == "3"
 
 
@@ -197,6 +199,7 @@ def test_first_or_create_accepts_a_read_only_schema() -> None:
 
     created = store.first_or_create("users", "1", MappingProxyType(USER_SCHEMA))
 
+    assert created is not None
     assert created["id"] == "1"
     assert isinstance(created["name"], str)
 
@@ -273,9 +276,11 @@ def test_first_or_create_returns_a_detached_copy() -> None:
     store = QuackStore()
 
     created = store.first_or_create("widgets", "abc", NESTED_SCHEMA)
+    assert created is not None
     created["tags"].append("mutated")
 
     stored = store.first_or_create("widgets", "abc", NESTED_SCHEMA)
+    assert stored is not None
     assert "mutated" not in stored["tags"]
 
 
@@ -448,3 +453,29 @@ def test_key_cap_warning_is_emitted_once(monkeypatch: pytest.MonkeyPatch) -> Non
     store.first_or_create("widgets", "c", schema, warn=warned.append)
 
     assert warned == ["widgets: reached 1 lazily created keys; not creating more"]
+
+
+def test_ensure_skips_a_resource_over_the_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(store_module, "_MAX_RESOURCES", 1)
+    store = QuackStore()
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    store.ensure("one", schema)
+    warned: list[str] = []
+
+    store.ensure("two", schema, warn=warned.append)
+
+    assert warned == ["two: reached 1 resources; not creating more"]
+    assert store.get_all("two") == []
+
+
+def test_first_or_create_returns_none_over_the_resource_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(store_module, "_MAX_RESOURCES", 1)
+    store = QuackStore()
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    store.first_or_create("one", "a", schema)
+    warned: list[str] = []
+
+    assert store.first_or_create("two", "a", schema, warn=warned.append) is None
+    assert warned == ["two: reached 1 resources; not creating more"]
