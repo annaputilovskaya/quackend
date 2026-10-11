@@ -60,8 +60,8 @@ def _identity_key(values: Mapping[str, Any], params: Sequence[str]) -> str:
 async def _json_object(request: Request) -> dict[str, Any]:
     """Read a bounded JSON object body, or fail with a 4xx status.
 
-    The size check uses the declared content-length; a chunked body without
-    that header is parsed as-is.
+    The body is counted as it is read from the stream, so a chunked body that
+    declares no ``content-length`` cannot be read past the cap either.
 
     Args:
         request: the incoming request.
@@ -84,8 +84,15 @@ async def _json_object(request: Request) -> dict[str, Any]:
         and int(declared) > _MAX_BODY_BYTES
     ):
         raise HTTPException(status_code=413, detail="request body too large")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > _MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="request body too large")
+        chunks.append(chunk)
     try:
-        payload = await request.json()
+        payload = json.loads(b"".join(chunks))
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail="malformed JSON body") from exc
     if not isinstance(payload, dict):
@@ -128,6 +135,8 @@ async def _handle_get(
             payload = store.first_or_create(
                 operation.resource, key, operation.item_schema, warn=warn
             )
+            if payload is None:
+                return JSONResponse({"error": "not found"}, status_code=404)
         return _ok_response(payload, operation.ok_status)
     if operation.item_schema is not None:
         payload = store.first(operation.resource)
@@ -135,6 +144,8 @@ async def _handle_get(
             payload = store.first_or_create(
                 operation.resource, "", operation.item_schema, warn=warn
             )
+            if payload is None:
+                return JSONResponse({"error": "not found"}, status_code=404)
         return _ok_response(payload, operation.ok_status)
     return _ok_response(store.get_all(operation.resource), operation.ok_status)
 

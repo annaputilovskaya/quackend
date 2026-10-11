@@ -103,6 +103,11 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - `OPTIONS` on a parameterised path lists the path's real verbs in `Allow`
   instead of answering an empty header.
 
+### Security
+
+- Request bodies are size-capped while they are read, so a chunked body without
+  `content-length` cannot exceed the limit.
+
 ### Changed
 
 - **Breaking**: `--quiet` no longer suppresses fail-soft warnings; it does only
@@ -163,3 +168,5 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   with `x-quackend-unservable: unsupported-media-type` instead of
   `200 application/json []`; each unservable operation is warned once at
   startup.
+- Lazily created mock data is capped (1000 keys per resource, 1000 resources);
+  over-limit lookups return the earliest item or 404, and each limit warns once.
