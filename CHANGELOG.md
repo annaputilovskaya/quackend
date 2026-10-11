@@ -97,6 +97,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   `minimum`/`maximum`, and `type: number` reads `exclusive*` at all; a
   non-numeric `exclusive*` value raises `ValueError` instead of being trusted.
 - `schema: true` in a response no longer crashes startup.
+- URL spec files are fetched with a 10 s timeout, an 8 MiB size cap, no
+  redirects and an `http`/`https`-only allow-list; previously an unbounded
+  `requests.get` could hang or reach arbitrary hosts.
 
 ### Changed
 
@@ -150,3 +153,5 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   with `AttributeError` or silently serving `[]`.
 - An explicitly declared `schema: {}` is served as a schema (missing-type
   warning → null rows) instead of falling back to `[]`.
+- **Breaking**: URL schemes outside `http`/`https` (including `ftp`) are
+  refused.
