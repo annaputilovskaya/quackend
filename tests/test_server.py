@@ -1213,3 +1213,12 @@ def test_declared_head_stays_in_the_allow_header() -> None:
     response = client.options("/probe")
 
     assert response.headers["allow"] == "GET, HEAD, OPTIONS"
+
+
+def test_chunked_body_over_the_cap_returns_413() -> None:
+    client = TestClient(build_app(make_status_spec()))
+    body = iter([b'{"name": "', b"x" * 1_048_576, b'"}'])
+
+    response = client.post("/jobs", content=body, headers={"content-type": "application/json"})
+
+    assert response.status_code == 413
