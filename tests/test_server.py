@@ -1075,3 +1075,82 @@ def test_build_app_with_non_mapping_info_raises_spec_load_error() -> None:
 
     with pytest.raises(SpecLoadError, match="str 'not an object'"):
         build_app(spec)
+
+
+def make_unservable_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "unservable", "version": "1.0.0"},
+        "paths": {
+            "/orders": {
+                "get": {"responses": {"404": {"description": "missing"}}},
+                "post": {
+                    "responses": {
+                        "200": {
+                            "description": "csv",
+                            "content": {"text/csv": {"schema": {"type": "string"}}},
+                        }
+                    }
+                },
+            },
+            "/reports": {"delete": {"responses": {"default": {"description": "anything"}}}},
+        },
+    }
+
+
+def test_operation_without_2xx_answers_501_no_2xx() -> None:
+    client = TestClient(build_app(make_unservable_spec()))
+
+    response = client.get("/orders")
+
+    assert response.status_code == 501
+    assert response.headers["x-quackend-unservable"] == "no-2xx-declared"
+
+
+def test_default_only_operation_answers_501_no_2xx() -> None:
+    client = TestClient(build_app(make_unservable_spec()))
+
+    response = client.delete("/reports")
+
+    assert response.status_code == 501
+    assert response.headers["x-quackend-unservable"] == "no-2xx-declared"
+
+
+def test_non_json_only_operation_answers_501_unsupported_media() -> None:
+    client = TestClient(build_app(make_unservable_spec()))
+
+    response = client.post("/orders", json={"name": "x"})
+
+    assert response.status_code == 501
+    assert response.headers["x-quackend-unservable"] == "unsupported-media-type"
+
+
+def test_unservable_operation_does_not_seed_a_collection() -> None:
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "seed", "version": "1.0.0"},
+        "paths": {
+            "/orgs/{org_id}/members/{member_id}": {
+                "get": {"responses": {"404": {"description": "missing"}}}
+            }
+        },
+    }
+    store = QuackStore()
+
+    client = TestClient(build_app(spec, store))
+    response = client.get("/orgs/orgA/members/alice")
+
+    assert response.status_code == 501
+    assert store.get_all("orgs/orgA/members") == []
+
+
+def test_build_app_warns_once_per_unservable_operation() -> None:
+    messages: list[str] = []
+
+    build_app(make_unservable_spec(), warn=messages.append)
+
+    assert messages == [
+        "GET /orders declares no 2xx response; quackend will not invent one",
+        "POST /orders declares text/csv; quackend only mocks application/json",
+        "DELETE /reports declares no 2xx response; quackend will not invent one",
+    ]

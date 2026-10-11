@@ -195,12 +195,12 @@ def test_iter_operations_reads_the_declared_success_status() -> None:
     assert operation.is_list is False
 
 
-def test_iter_operations_defaults_the_success_status_to_200() -> None:
+def test_iter_operations_without_a_2xx_success_reports_none() -> None:
     spec = {"paths": {"/ping": {"get": {"responses": {"default": {"description": "default"}}}}}}
 
     operation = next(iter_operations(spec))
 
-    assert operation.ok_status == 200
+    assert operation.ok_status is None
 
 
 def test_iter_operations_skips_methods_a_spec_does_not_declare() -> None:
@@ -647,3 +647,53 @@ def test_load_openapi_wraps_a_broken_url_exactly_once(
 
     assert isinstance(info.value.__cause__, ResolutionError)
     assert str(info.value).count("Cannot fetch URL") == 1
+
+
+def test_iter_operations_reads_the_declared_media_type() -> None:
+    spec = {
+        "paths": {
+            "/orders": {
+                "post": {
+                    "responses": {
+                        "200": {
+                            "description": "csv",
+                            "content": {"text/csv": {"schema": {"type": "string"}}},
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    operation = next(iter_operations(spec))
+
+    assert operation.media_type == "text/csv"
+
+
+def test_declared_media_type_normalises_case_and_charset() -> None:
+    spec = {
+        "paths": {
+            "/things": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {"Application/JSON; charset=utf-8": {}},
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    operation = next(iter_operations(spec))
+
+    assert operation.media_type == "application/json"
+
+
+def test_operation_without_content_declares_no_media() -> None:
+    spec = {"paths": {"/jobs": {"post": {"responses": {"202": {"description": "accepted"}}}}}}
+
+    operation = next(iter_operations(spec))
+
+    assert operation.media_type is None

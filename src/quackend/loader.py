@@ -195,7 +195,8 @@ class Operation:
     method: str
     resource: str
     params: tuple[str, ...]
-    ok_status: int
+    ok_status: int | None  # None when the operation declares no 2xx response
+    media_type: str | None  # first declared media type of the first 2xx
     item_schema: Mapping[str, Any] | None
     is_list: bool
 
@@ -322,7 +323,8 @@ def iter_operations(spec: Mapping[str, Any]) -> Iterator[Operation]:
                 method=method,
                 resource=route.resource,
                 params=route.params,
-                ok_status=first_success[0] if first_success is not None else 200,
+                ok_status=first_success[0] if first_success is not None else None,
+                media_type=_declared_media(operation),
                 item_schema=_item_schema(schema) if schema is not None else None,
                 is_list=schema is not None and schema.get("type") == "array",
             )
@@ -334,6 +336,24 @@ def _json_media(content: Mapping[str, Any]) -> Mapping[str, Any] | None:
         if media_type.split(";", 1)[0].strip().lower() == "application/json":
             result: Mapping[str, Any] = media
             return result
+    return None
+
+
+def _declared_media(operation: Mapping[str, Any]) -> str | None:
+    """Return the first declared media type of the operation's first 2xx.
+
+    Content-type parameters such as ``; charset=utf-8`` are ignored, and the
+    comparison is done on the lowercased base type so ``Application/JSON`` and
+    ``text/csv`` come out the same as they will be sent.
+
+    Returns:
+        The first declared media type, or None when no 2xx response declares
+        any content.
+    """
+    for _, response in iter_success_responses(operation):
+        content: Mapping[str, Any] = response.get("content") or {}
+        for media_type in content:
+            return media_type.split(";", 1)[0].strip().lower()
     return None
 
 
