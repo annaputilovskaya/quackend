@@ -100,6 +100,8 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - URL spec files are fetched with a 10 s timeout, an 8 MiB size cap, no
   redirects and an `http`/`https`-only allow-list; previously an unbounded
   `requests.get` could hang or reach arbitrary hosts.
+- `OPTIONS` on a parameterised path lists the path's real verbs in `Allow`
+  instead of answering an empty header.
 
 ### Changed
 
