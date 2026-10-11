@@ -379,3 +379,23 @@ def test_the_default_depth_limit_generates_one_level_deeper() -> None:
     assert default_item is not None
     assert shallow_item["a"] == {"b": {}}
     assert isinstance(default_item["a"]["b"]["c"], str)
+
+
+def test_ensure_warns_once_for_a_repeated_message() -> None:
+    store = QuackStore()
+    warned: list[str] = []
+
+    store.ensure("broken", {"properties": {"x": {}}}, warn=warned.append)
+
+    assert warned == ["broken: missing type, returning null"]
+
+
+def test_first_or_create_warns_once_across_keys() -> None:
+    store = QuackStore()
+    warned: list[str] = []
+    schema = {"type": "object", "properties": {"x": {}}}
+
+    store.first_or_create("broken", "a", schema, warn=warned.append)
+    store.first_or_create("broken", "b", schema, warn=warned.append)
+
+    assert warned == ["broken: missing type, returning null"]

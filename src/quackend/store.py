@@ -179,6 +179,7 @@ class QuackStore:
         self._fake = Faker()
         self._collections: dict[str, dict[str, dict[str, Any]]] = {}
         self._counters: dict[str, int] = {}
+        self._warned: set[tuple[str, str]] = set()
 
     def _generate(
         self,
@@ -230,6 +231,10 @@ class QuackStore:
         emit = warn if warn is not None else _no_warn
 
         def on_warn(message: str) -> None:
+            seen = (resource, message)
+            if seen in self._warned:
+                return
+            self._warned.add(seen)
             emit(f"{resource}: {message}")
 
         items: dict[str, dict[str, Any]] = {}
@@ -278,6 +283,10 @@ class QuackStore:
         emit = warn if warn is not None else _no_warn
 
         def on_warn(message: str) -> None:
+            seen = (resource, message)
+            if seen in self._warned:
+                return
+            self._warned.add(seen)
             emit(f"{resource}: {message}")
 
         item = self._generate(schema, on_warn)
