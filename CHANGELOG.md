@@ -155,3 +155,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   warning → null rows) instead of falling back to `[]`.
 - **Breaking**: URL schemes outside `http`/`https` (including `ftp`) are
   refused.
+- **Breaking**: operations declaring no 2xx response answer 501 with an
+  `x-quackend-unservable: no-2xx-declared` header instead of an invented 200.
+- **Breaking**: operations declaring only non-JSON 2xx responses answer 501
+  with `x-quackend-unservable: unsupported-media-type` instead of
+  `200 application/json []`; each unservable operation is warned once at
+  startup.
