@@ -115,6 +115,7 @@ async def _handle_get(
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
+    assert operation.ok_status is not None
     key = _identity_key(request.path_params, operation.params)
     if operation.is_list:
         return _ok_response(store.get_all(operation.resource), operation.ok_status)
@@ -144,6 +145,7 @@ async def _handle_post(
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
+    assert operation.ok_status is not None
     return _ok_response(
         store.create(operation.resource, await _json_object(request)),
         operation.ok_status,
@@ -156,6 +158,7 @@ async def _handle_update(
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
+    assert operation.ok_status is not None
     key = _identity_key(request.path_params, operation.params)
     updated = store.update(operation.resource, key, await _json_object(request))
     if updated is None:
@@ -169,6 +172,7 @@ async def _handle_delete(
     request: Request,
     warn: Callable[[str], None],
 ) -> Response:
+    assert operation.ok_status is not None
     key = _identity_key(request.path_params, operation.params)
     if not store.delete(operation.resource, key):
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -310,7 +314,18 @@ def _endpoint(
     warn: Callable[[str], None],
 ) -> Callable[[Request], Awaitable[Response]]:
     async def _view(request: Request) -> Response:
+        if operation.ok_status is None:
+            return Response(
+                status_code=501,
+                headers={"x-quackend-unservable": "no-2xx-declared"},
+            )
+        if operation.item_schema is None and operation.media_type not in (None, "application/json"):
+            return Response(
+                status_code=501,
+                headers={"x-quackend-unservable": "unsupported-media-type"},
+            )
         bound = _bind_resource(operation, store, request.path_params, warn)
+        assert bound.ok_status is not None  # narrowed by the gate above
         return await handler(bound, store, request, warn)
 
     return _view
