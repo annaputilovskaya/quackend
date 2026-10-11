@@ -206,3 +206,12 @@ def test_start_accepts_the_endpoints_of_the_tcp_range(
 
     assert result.exit_code == 0
     assert start["port"] == port
+
+
+def test_cli_start_refuses_a_non_http_url_and_exits_2(runner: CliRunner) -> None:
+    result = runner.invoke(app, ["start", "ftp://example.org/spec.yaml"])
+
+    assert result.exit_code == 2
+    assert "Traceback" not in result.output
+    assert len(result.stderr.strip().splitlines()) == 1
+    assert "Refusing to fetch 'ftp'" in result.stderr

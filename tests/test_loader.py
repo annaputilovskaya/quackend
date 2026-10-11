@@ -1,4 +1,7 @@
+import functools
+import threading
 import urllib.parse
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -569,3 +572,78 @@ def test_wrapper_wraps_transport_errors_from_requests(
         _wrapper()(_http_url(), {})
 
     assert isinstance(info.value.__cause__, requests_lib.Timeout)
+
+
+class _QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def _serve_directory(directory: Path) -> tuple[ThreadingHTTPServer, threading.Thread]:
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        functools.partial(_QuietHandler, directory=str(directory)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def test_load_openapi_fetches_a_url_spec_with_an_external_ref(tmp_path: Path) -> None:
+    (tmp_path / "items.yaml").write_text(
+        "type: array\nitems:\n  type: object\n  properties:\n    name:\n      type: string\n",
+        encoding="utf-8",
+    )
+    server, thread = _serve_directory(tmp_path)
+    try:
+        port = server.server_address[1]
+        (tmp_path / "root.yaml").write_text(
+            f"""openapi: 3.0.0
+info:
+  title: url probe
+  version: "1"
+paths:
+  /things:
+    get:
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "http://127.0.0.1:{port}/items.yaml"
+""",
+            encoding="utf-8",
+        )
+        spec = load_openapi(f"http://127.0.0.1:{port}/root.yaml")
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    schema = spec["paths"]["/things"]["get"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    assert schema["type"] == "array"
+
+
+def test_load_openapi_refuses_a_non_http_scheme_before_fetching() -> None:
+    with pytest.raises(SpecLoadError, match="Refusing to fetch 'ftp'") as info:
+        load_openapi("ftp://example.org/spec.yaml")
+
+    assert info.value.__cause__ is None
+    assert str(info.value).count("Refusing to fetch 'ftp'") == 1
+
+
+def test_load_openapi_wraps_a_broken_url_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise requests_lib.Timeout("no route to host")
+
+    monkeypatch.setattr(requests_lib, "get", refuse)
+
+    with pytest.raises(SpecLoadError, match="ResolutionError: Cannot fetch URL") as info:
+        load_openapi("http://example.org/spec.yaml")
+
+    assert isinstance(info.value.__cause__, ResolutionError)
+    assert str(info.value).count("Cannot fetch URL") == 1

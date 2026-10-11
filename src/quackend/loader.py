@@ -143,15 +143,21 @@ def load_openapi(source: str | Path) -> dict[str, Any]:
         SpecLoadError: the source cannot be read, parsed, resolved or
             validated. The message names the underlying exception class and is
             a single line. The original exception is prance, ruamel.yaml,
-            openapi-spec-validator or a filesystem error, and is attached as
-            ``__cause__``.
+            openapi-spec-validator, requests or a filesystem error, and is
+            attached as ``__cause__``. A URL with a scheme outside ``http``/
+            ``https`` is refused before any fetch happens.
     """
+    _checked_url(str(source))
+    original_fetch = prance.util.url.fetch_url_text
     try:
+        prance.util.url.fetch_url_text = _wrap_fetch_url_text(original_fetch)
         parser = prance.ResolvingParser(str(source), backend="openapi-spec-validator")
         spec: dict[str, Any] = parser.specification
     except Exception as exc:
         detail = "; ".join(str(exc).splitlines())
         raise SpecLoadError(f"{type(exc).__name__}: {detail}") from exc
+    finally:
+        prance.util.url.fetch_url_text = original_fetch
     return spec
 
 
