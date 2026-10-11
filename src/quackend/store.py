@@ -14,6 +14,7 @@ from quackend.generator import ARRAY_MAX, DEPTH_LIMIT, generate_object
 __all__ = ["COLLECTION_SIZE", "QuackStore", "StoreConfig", "StoreProtocol"]
 
 COLLECTION_SIZE = 10
+_MAX_KEYS_PER_RESOURCE = 1_000
 
 
 def _no_warn(_message: str) -> None:
@@ -289,11 +290,17 @@ class QuackStore:
             self._warned.add(seen)
             emit(f"{resource}: {message}")
 
+        collection = self._collections.get(resource)
+        if collection is not None and len(collection) >= _MAX_KEYS_PER_RESOURCE:
+            on_warn(f"reached {_MAX_KEYS_PER_RESOURCE} lazily created keys; not creating more")
+            return copy.deepcopy(collection[sorted(collection)[0]])
+
         item = self._generate(schema, on_warn)
         item["id"] = key
-        if resource not in self._collections:
-            self._collections[resource] = {}
-        self._collections[resource][key] = item
+        if collection is None:
+            collection = {}
+            self._collections[resource] = collection
+        collection[key] = item
         return copy.deepcopy(item)
 
     def first(self, resource: str) -> dict[str, Any] | None:

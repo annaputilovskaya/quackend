@@ -3,6 +3,7 @@ from types import MappingProxyType
 
 import pytest
 
+from quackend import store as store_module
 from quackend.store import COLLECTION_SIZE, QuackStore, StoreConfig, StoreProtocol
 
 USER_SCHEMA = {
@@ -399,3 +400,51 @@ def test_first_or_create_warns_once_across_keys() -> None:
     store.first_or_create("broken", "b", schema, warn=warned.append)
 
     assert warned == ["broken: missing type, returning null"]
+
+
+def test_first_or_create_caps_the_keys_of_a_resource(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(store_module, "_MAX_KEYS_PER_RESOURCE", 2)
+    store = QuackStore()
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    warned: list[str] = []
+    first = store.first_or_create("widgets", "a", schema)
+    store.first_or_create("widgets", "b", schema)
+
+    over = store.first_or_create("widgets", "c", schema, warn=warned.append)
+
+    assert over == first
+    assert warned == ["widgets: reached 2 lazily created keys; not creating more"]
+    assert len(store.get_all("widgets")) == 2
+
+
+def test_capped_key_return_is_a_detached_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(store_module, "_MAX_KEYS_PER_RESOURCE", 1)
+    store = QuackStore()
+    schema = {
+        "type": "object",
+        "properties": {"tags": {"type": "array", "items": {"type": "string"}}},
+    }
+    store.first_or_create("widgets", "a", schema)
+
+    over = store.first_or_create("widgets", "b", schema)
+
+    assert over is not None
+    over["tags"].append("mutated")
+    stored = store.get("widgets", "a")
+    assert stored is not None
+    assert "mutated" not in stored["tags"]
+
+
+def test_key_cap_warning_is_emitted_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(store_module, "_MAX_KEYS_PER_RESOURCE", 1)
+    store = QuackStore()
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    warned: list[str] = []
+    store.first_or_create("widgets", "a", schema)
+
+    store.first_or_create("widgets", "b", schema, warn=warned.append)
+    store.first_or_create("widgets", "c", schema, warn=warned.append)
+
+    assert warned == ["widgets: reached 1 lazily created keys; not creating more"]
