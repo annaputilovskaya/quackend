@@ -170,3 +170,5 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   startup.
 - Lazily created mock data is capped (1000 keys per resource, 1000 resources);
   over-limit lookups return the earliest item or 404, and each limit warns once.
+- Warning text is flattened to one line, neutralising ANSI/OSC escape
+  sequences and newlines coming from spec-controlled text.
