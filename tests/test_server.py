@@ -1154,3 +1154,62 @@ def test_build_app_warns_once_per_unservable_operation() -> None:
         "POST /orders declares text/csv; quackend only mocks application/json",
         "DELETE /reports declares no 2xx response; quackend will not invent one",
     ]
+
+
+def make_templated_options_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "templated-options", "version": "1.0.0"},
+        "paths": {
+            "/orgs/{org_id}/members": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "post": {"responses": {"200": {"description": "ok"}}},
+                "options": {"responses": {"204": {"description": "no content"}}},
+            },
+            "/orgs": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "options": {"responses": {"204": {"description": "no content"}}},
+            },
+        },
+    }
+
+
+def test_declared_options_on_a_templated_path_lists_the_path_methods() -> None:
+    client = TestClient(build_app(make_templated_options_spec()))
+
+    response = client.options("/orgs/orgA/members")
+
+    assert response.status_code == 204
+    assert response.headers["allow"] == "GET, POST, OPTIONS"
+
+
+def test_templated_and_concrete_paths_do_not_share_their_allow() -> None:
+    client = TestClient(build_app(make_templated_options_spec()))
+
+    templated = client.options("/orgs/orgA/members")
+    concrete = client.options("/orgs")
+
+    assert templated.headers["allow"] == "GET, POST, OPTIONS"
+    assert concrete.headers["allow"] == "GET, OPTIONS"
+
+
+def make_head_options_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "head-options", "version": "1.0.0"},
+        "paths": {
+            "/probe": {
+                "get": {"responses": {"200": {"description": "ok"}}},
+                "head": {"responses": {"200": {"description": "ok"}}},
+                "options": {"responses": {"204": {"description": "no content"}}},
+            }
+        },
+    }
+
+
+def test_declared_head_stays_in_the_allow_header() -> None:
+    client = TestClient(build_app(make_head_options_spec()))
+
+    response = client.options("/probe")
+
+    assert response.headers["allow"] == "GET, HEAD, OPTIONS"
