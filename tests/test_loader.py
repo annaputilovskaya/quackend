@@ -697,3 +697,89 @@ def test_operation_without_content_declares_no_media() -> None:
     operation = next(iter_operations(spec))
 
     assert operation.media_type is None
+
+
+def test_iter_operations_reads_a_v3_request_body() -> None:
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "t", "version": "1"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": {"type": "object"}}},
+                    },
+                    "responses": {"201": {"description": "created"}},
+                }
+            }
+        },
+    }
+
+    operation = next(iter_operations(spec))
+
+    assert operation.body_schema == {"type": "object"}
+    assert operation.body_required is True
+
+
+def test_iter_operations_reads_a_swagger2_body_parameter() -> None:
+    spec = {
+        "swagger": "2.0",
+        "info": {"title": "t", "version": "1"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "parameters": [
+                        {
+                            "in": "body",
+                            "name": "body",
+                            "required": True,
+                            "schema": {"type": "object"},
+                        }
+                    ],
+                    "responses": {"201": {"description": "created"}},
+                }
+            }
+        },
+    }
+
+    operation = next(iter_operations(spec))
+
+    assert operation.body_schema == {"type": "object"}
+    assert operation.body_required is True
+
+
+def test_iter_operations_without_a_request_body_reports_none() -> None:
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "t", "version": "1"},
+        "paths": {"/items": {"post": {"responses": {"201": {"description": "created"}}}}},
+    }
+
+    operation = next(iter_operations(spec))
+
+    assert operation.body_schema is None
+    assert operation.body_required is False
+
+
+def test_iter_operations_ignores_a_non_json_request_body() -> None:
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "t", "version": "1"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {"text/plain": {"schema": {"type": "string"}}},
+                    },
+                    "responses": {"201": {"description": "created"}},
+                }
+            }
+        },
+    }
+
+    operation = next(iter_operations(spec))
+
+    assert operation.body_schema is None
+    assert operation.body_required is True

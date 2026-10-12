@@ -10,9 +10,11 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
+import jsonschema
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from openapi_schema_validator import OAS30Validator, OAS31Validator
 
 from quackend.loader import (
     Operation,
@@ -58,8 +60,8 @@ def _identity_key(values: Mapping[str, Any], params: Sequence[str]) -> str:
     return "/".join(str(values.get(name, "")) for name in params)
 
 
-async def _json_object(request: Request) -> dict[str, Any]:
-    """Read a bounded JSON object body, or fail with a 4xx status.
+async def _read_body_bytes(request: Request) -> bytes:
+    """Read a bounded request body.
 
     The body is counted as it is read from the stream, so a chunked body that
     declares no ``content-length`` cannot be read past the cap either.
@@ -68,11 +70,11 @@ async def _json_object(request: Request) -> dict[str, Any]:
         request: the incoming request.
 
     Returns:
-        The decoded JSON object.
+        The raw request body, possibly empty.
 
     Raises:
         HTTPException: 415 for a non-JSON content type, 413 for a body over
-            _MAX_BODY_BYTES, 400 for an unparsable or non-object body.
+            _MAX_BODY_BYTES.
     """
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type and media_type != "application/json":
@@ -92,12 +94,91 @@ async def _json_object(request: Request) -> dict[str, Any]:
         if total > _MAX_BODY_BYTES:
             raise HTTPException(status_code=413, detail="request body too large")
         chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _decode_object(raw: bytes) -> dict[str, Any]:
+    """Decode a JSON object from raw bytes, or fail with a 400 status.
+
+    Args:
+        raw: the raw request body.
+
+    Returns:
+        The decoded JSON object.
+
+    Raises:
+        HTTPException: 400 for an unparsable or non-object body.
+    """
     try:
-        payload = json.loads(b"".join(chunks))
+        payload = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail="malformed JSON body") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object")
+    return payload
+
+
+async def _json_object(request: Request) -> dict[str, Any]:
+    """Read a bounded JSON object body, or fail with a 4xx status.
+
+    Args:
+        request: the incoming request.
+
+    Returns:
+        The decoded JSON object.
+    """
+    return _decode_object(await _read_body_bytes(request))
+
+
+def _body_validator(spec: Mapping[str, Any]) -> Any:
+    """Pick the JSON Schema validator dialect the spec declares.
+
+    Args:
+        spec: the resolved spec.
+
+    Returns:
+        A validator class suitable for the spec's dialect.
+    """
+    if str(spec.get("swagger", "")).startswith("2"):
+        return jsonschema.Draft4Validator
+    if str(spec.get("openapi", "")).startswith("3.1"):
+        return OAS31Validator
+    return OAS30Validator
+
+
+async def _validated_body(
+    request: Request,
+    operation: Operation,
+    validator_cls: Any,
+) -> dict[str, Any]:
+    """Read the request body, enforcing the operation's declared schema.
+
+    Args:
+        request: the incoming request.
+        operation: the operation the request matched.
+        validator_cls: the JSON Schema validator class for the spec's dialect.
+
+    Returns:
+        The decoded request body.
+
+    Raises:
+        HTTPException: 422 when a required body is missing or the body violates
+            the declared schema; 415/413/400 from the shared body reader.
+    """
+    if operation.body_schema is None and not operation.body_required:
+        return await _json_object(request)
+    raw = await _read_body_bytes(request)
+    if not raw:
+        if operation.body_required:
+            raise HTTPException(status_code=422, detail="requestBody is required")
+        return {}
+    payload = _decode_object(raw)
+    schema = operation.body_schema
+    if schema is not None:
+        errors = sorted(validator_cls(schema).iter_errors(payload), key=lambda e: list(e.path))
+        if errors:
+            detail = [{"path": list(e.path), "message": e.message} for e in errors]
+            raise HTTPException(status_code=422, detail=detail)
     return payload
 
 
@@ -127,6 +208,7 @@ async def _handle_get(
     store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
+    validator_cls: Any,
 ) -> Response:
     assert operation.ok_status is not None
     key = _identity_key(request.path_params, operation.params)
@@ -161,10 +243,11 @@ async def _handle_post(
     store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
+    validator_cls: Any,
 ) -> Response:
     assert operation.ok_status is not None
     return _ok_response(
-        store.create(operation.resource, await _json_object(request)),
+        store.create(operation.resource, await _validated_body(request, operation, validator_cls)),
         operation.ok_status,
     )
 
@@ -174,10 +257,13 @@ async def _handle_update(
     store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
+    validator_cls: Any,
 ) -> Response:
     assert operation.ok_status is not None
     key = _identity_key(request.path_params, operation.params)
-    updated = store.update(operation.resource, key, await _json_object(request))
+    updated = store.update(
+        operation.resource, key, await _validated_body(request, operation, validator_cls)
+    )
     if updated is None:
         return JSONResponse({"error": "not found"}, status_code=404)
     return _ok_response(updated, operation.ok_status)
@@ -188,6 +274,7 @@ async def _handle_delete(
     store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
+    validator_cls: Any,
 ) -> Response:
     assert operation.ok_status is not None
     key = _identity_key(request.path_params, operation.params)
@@ -226,6 +313,7 @@ async def _handle_head(
     store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
+    validator_cls: Any,
 ) -> Response:
     """Answer a declared HEAD with what its own declared success answers.
 
@@ -239,11 +327,13 @@ async def _handle_head(
         store: the store backing the app.
         request: the incoming request.
         warn: the callback receiving generator warnings.
+        validator_cls: the JSON Schema validator class for the spec's dialect;
+            unused.
 
     Returns:
         The status and headers of the GET answer, with an empty body.
     """
-    response = await _handle_get(operation, store, request, warn)
+    response = await _handle_get(operation, store, request, warn, validator_cls)
     headers = {
         name: value for name, value in response.headers.items() if name.lower() != "content-length"
     }
@@ -259,6 +349,7 @@ async def _handle_options(
     store: StoreProtocol,
     request: Request,
     warn: Callable[[str], None],
+    validator_cls: Any,
 ) -> Response:
     """Answer a declared OPTIONS with the methods this app serves for the path.
 
@@ -271,6 +362,8 @@ async def _handle_options(
         store: the store backing the app; unused.
         request: the incoming request.
         warn: the callback receiving generator warnings; unused.
+        validator_cls: the JSON Schema validator class for the spec's dialect;
+            unused.
 
     Returns:
         A 204 response whose Allow header lists the served methods, ordered by the
@@ -308,7 +401,9 @@ def _bind_resource(
     return replace(operation, resource=resource)
 
 
-_Handler = Callable[[Operation, StoreProtocol, Request, Callable[[str], None]], Awaitable[Response]]
+_Handler = Callable[
+    [Operation, StoreProtocol, Request, Callable[[str], None], Any], Awaitable[Response]
+]
 
 
 class UnsupportedOperationError(ValueError):
@@ -337,6 +432,7 @@ def _endpoint(
     operation: Operation,
     store: StoreProtocol,
     warn: Callable[[str], None],
+    validator_cls: Any,
 ) -> Callable[[Request], Awaitable[Response]]:
     async def _view(request: Request) -> Response:
         if operation.ok_status is None:
@@ -351,7 +447,7 @@ def _endpoint(
             )
         bound = _bind_resource(operation, store, request.path_params, warn)
         assert bound.ok_status is not None  # narrowed by the gate above
-        return await handler(bound, store, request, warn)
+        return await handler(bound, store, request, warn, validator_cls)
 
     return _view
 
@@ -397,6 +493,7 @@ def build_app(
     resolved_store = store if store is not None else QuackStore()
     emit = warn if warn is not None else _log_warn
     draw: Callable[[], float] = rng.random if rng is not None else random.Random().random
+    validator_cls = _body_validator(spec)
 
     operations = list(iter_operations(spec))
     _seed_resources(operations, resolved_store, emit)
@@ -453,7 +550,7 @@ def build_app(
             )
         app.add_api_route(
             operation.path,
-            _endpoint(handler, operation, resolved_store, emit),
+            _endpoint(handler, operation, resolved_store, emit, validator_cls),
             methods=[operation.method.upper()],
             include_in_schema=False,
         )

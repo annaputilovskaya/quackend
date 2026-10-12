@@ -39,6 +39,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 - A wide-open CORS middleware (`allow_origins=["*"]`), so a browser front end can
   call the mock directly. It is deliberate — the mock holds no session — and
   documented in `SECURITY.md`.
+- Request bodies are validated against the operation's declared JSON schema with
+  `jsonschema` and `openapi-schema-validator` (Swagger 2.0, OpenAPI 3.0 and 3.1).
+  Only object bodies are accepted; a valid array or scalar body answers 400.
 
 ### Fixed
 
@@ -120,6 +123,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- **Breaking**: a `POST`/`PUT`/`PATCH` body that violates the operation's
+  declared `requestBody` schema now answers 422 instead of being stored and
+  answered 2xx; a required body that is missing answers 422 too.
 - **Breaking**: `/docs`, `/redoc` and `/openapi.json` are disabled. Every spec
   route was already hidden from the schema, so the served docs claimed "No
   operations defined" and only widened the surface.

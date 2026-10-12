@@ -21,9 +21,11 @@ __all__ = [
     "iter_operations",
     "iter_success_responses",
     "load_openapi",
+    "operation_request_schema",
     "operation_response_schema",
     "parse_route",
     "path_resource",
+    "request_body_required",
     "resolve_resource",
 ]
 
@@ -199,6 +201,8 @@ class Operation:
     media_type: str | None  # first declared media type of the first 2xx
     item_schema: Mapping[str, Any] | None
     is_list: bool
+    body_schema: Mapping[str, Any] | None  # declared JSON schema of the request body
+    body_required: bool  # requestBody.required / Swagger 2 body param required
 
 
 def parse_route(path_template: str) -> Route:
@@ -327,6 +331,8 @@ def iter_operations(spec: Mapping[str, Any]) -> Iterator[Operation]:
                 media_type=_declared_media(operation),
                 item_schema=_item_schema(schema) if schema is not None else None,
                 is_list=schema is not None and schema.get("type") == "array",
+                body_schema=operation_request_schema(operation),
+                body_required=request_body_required(operation),
             )
 
 
@@ -381,6 +387,56 @@ def operation_response_schema(operation: Mapping[str, Any]) -> dict[str, Any] | 
         if raw is None:
             continue
         return _coerce_schema(raw)
+    return None
+
+
+def operation_request_schema(operation: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return the first JSON request-body schema of an operation, if declared.
+
+    Reads the OpenAPI 3 ``requestBody.content["application/json"]`` entry and
+    falls back to the Swagger 2.0 ``parameters`` entry whose ``in`` is ``body``.
+
+    Args:
+        operation: a single OpenAPI operation object.
+
+    Returns:
+        The request-body schema as a plain ``dict``, or None when the operation
+        declares no JSON request body.
+    """
+    body = operation.get("requestBody")
+    if isinstance(body, Mapping):
+        media = _json_media(body.get("content") or {})
+        raw: Any = media.get("schema") if media is not None else None
+        return _coerce_schema(raw) if raw is not None else None
+    return _swagger_body_schema(operation)
+
+
+def request_body_required(operation: Mapping[str, Any]) -> bool:
+    """Return whether the operation marks its request body as required.
+
+    Args:
+        operation: a single OpenAPI operation object.
+
+    Returns:
+        True when the OpenAPI 3 ``requestBody.required`` flag is set or a
+        Swagger 2.0 ``in: body`` parameter is required.
+    """
+    body = operation.get("requestBody")
+    if isinstance(body, Mapping):
+        return bool(body.get("required"))
+    return any(
+        parameter.get("in") == "body" and bool(parameter.get("required"))
+        for parameter in operation.get("parameters") or []
+        if isinstance(parameter, Mapping)
+    )
+
+
+def _swagger_body_schema(operation: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return the Swagger 2.0 ``in: body`` parameter schema, if declared."""
+    for parameter in operation.get("parameters") or []:
+        if isinstance(parameter, Mapping) and parameter.get("in") == "body":
+            raw: Any = parameter.get("schema")
+            return _coerce_schema(raw) if raw is not None else None
     return None
 
 
