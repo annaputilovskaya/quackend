@@ -36,6 +36,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   exception families that change between upstream releases. **Breaking**: a
   caller catching `prance.ValidationError` must catch `SpecLoadError` instead;
   the original exception is available as `__cause__`.
+- A wide-open CORS middleware (`allow_origins=["*"]`), so a browser front end can
+  call the mock directly. It is deliberate — the mock holds no session — and
+  documented in `SECURITY.md`.
 
 ### Fixed
 
@@ -117,6 +120,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- **Breaking**: `/docs`, `/redoc` and `/openapi.json` are disabled. Every spec
+  route was already hidden from the schema, so the served docs claimed "No
+  operations defined" and only widened the surface.
 - **Breaking**: `--quiet` no longer suppresses fail-soft warnings; it does only
   what the help and README promise (route table, version line, banner, uvicorn
   log level).

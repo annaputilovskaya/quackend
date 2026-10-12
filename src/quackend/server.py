@@ -11,6 +11,7 @@ from dataclasses import replace
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from quackend.loader import (
@@ -419,7 +420,12 @@ def build_app(
     if info is not None and not isinstance(info, Mapping):
         raise SpecLoadError(f"info must be an object, got {type(info).__name__} {info!r}")
 
-    app = FastAPI(title=(info or {}).get("title", "quackend"))
+    app = FastAPI(
+        title=(info or {}).get("title", "quackend"),
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
 
     @app.middleware("http")
     async def _simulate(
@@ -431,6 +437,13 @@ def build_app(
         if latency_ms:
             await asyncio.sleep(latency_ms / 1000)
         return await call_next(request)
+
+    app.add_middleware(  # mock-only: wide-open CORS is deliberate (see SECURITY.md)
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     for operation in operations:
         handler = _VERBS.get(operation.method)

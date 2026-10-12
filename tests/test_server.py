@@ -1338,3 +1338,42 @@ def test_templated_get_returns_404_over_the_resource_cap(
     response = client.get("/orgs/orgA/members")
 
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_the_schema_surface_is_closed(path: str) -> None:
+    client, _ = make_client()
+
+    assert client.get(path).status_code == 404
+
+
+def test_a_cors_preflight_is_answered() -> None:
+    client, _ = make_client()
+
+    response = client.options(
+        "/users",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_a_cross_origin_response_carries_the_cors_header() -> None:
+    client, _ = make_client()
+
+    response = client.get("/users", headers={"Origin": "http://localhost:5173"})
+
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_cors_preflight_is_not_subject_to_simulated_failures() -> None:
+    client = TestClient(build_app(make_status_spec(), fail_rate=1.0))
+
+    response = client.options(
+        "/jobs",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"},
+    )
+
+    assert response.status_code != 500
+    assert response.headers["access-control-allow-origin"] == "*"

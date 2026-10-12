@@ -44,3 +44,12 @@ something other than what the spec declares.
 Not vulnerabilities: the mock answers fake data, it holds no real user data, and
 it binds `127.0.0.1` unless you pass `--host`. Do not expose a quackend instance
 to a network you do not trust.
+
+## CORS
+
+The mock answers every `Access-Control-Allow-Origin` with `*`: it is a throwaway
+mock a browser front end calls directly, not a backend that holds a session, and
+a single wildcard is the only policy that works without per-origin setup. This is
+deliberate. It is also why the built-in API docs are disabled — the mock exposes
+no schema surface to browse — and why the mock binds `127.0.0.1` by default; do
+not run it with `--host 0.0.0.0` on a network you do not trust.
