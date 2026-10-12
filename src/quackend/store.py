@@ -9,9 +9,9 @@ from typing import Any, Protocol
 
 from faker import Faker
 
-from quackend.generator import ARRAY_MAX, DEPTH_LIMIT, generate_object
+from quackend.generator import ARRAY_MAX, DEPTH_LIMIT, SchemaError, generate_object
 
-__all__ = ["COLLECTION_SIZE", "QuackStore", "StoreConfig", "StoreProtocol"]
+__all__ = ["COLLECTION_SIZE", "QuackStore", "SchemaError", "StoreConfig", "StoreProtocol"]
 
 COLLECTION_SIZE = 10
 _MAX_KEYS_PER_RESOURCE = 1_000

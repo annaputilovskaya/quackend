@@ -1,4 +1,5 @@
 import json
+import random
 from collections.abc import Callable
 from pathlib import Path
 
@@ -291,3 +292,67 @@ def test_start_flattens_a_spec_controlled_warning_into_one_line(
     assert forged  # at least one warning was emitted
     for line in forged:
         assert line.lstrip().startswith("[WARNING]")  # no line forges a fresh log record
+
+
+def test_start_rejects_a_negative_latency(
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]]
+) -> None:
+    start = patch_start()
+
+    result = runner.invoke(app, ["start", "spec.yaml", "--latency", "-1"])
+
+    assert result.exit_code == 2
+    assert "Traceback" not in result.output
+    assert start["build_app"] == {}
+
+
+def test_start_reports_an_unservable_spec_and_exits_2(
+    runner: CliRunner,
+    patch_start: Callable[..., dict[str, object]],
+    monkeypatch: pytest.MonkeyPatch,
+    strip_ansi: Callable[[str], str],
+) -> None:
+    patch_start()  # wires load_openapi and uvicorn.run, leaving build_app to override
+
+    def refuse_build_app(*args: object, **kwargs: object) -> object:
+        raise SpecLoadError("resource 'items' failed to generate: properties must be an object")
+
+    monkeypatch.setattr(cli_module, "build_app", refuse_build_app)
+
+    result = runner.invoke(app, ["start", "spec.yaml"])
+
+    assert result.exit_code == 2
+    assert "Traceback" not in result.output
+    stderr = strip_ansi(result.stderr).strip()
+    assert stderr == (
+        "quackend: cannot serve 'spec.yaml': "
+        "resource 'items' failed to generate: properties must be an object"
+    )
+
+
+def test_start_seeds_simulated_failures_from_the_seed(
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]]
+) -> None:
+    start = patch_start()
+    build_kwargs = start["build_app"]
+    assert isinstance(build_kwargs, dict)
+
+    result = runner.invoke(app, ["start", "spec.yaml", "--seed", "42", "--fail-rate", "0.5"])
+
+    assert result.exit_code == 0
+    rng = build_kwargs["rng"]
+    assert isinstance(rng, random.Random)
+    assert rng.random() == random.Random(42).random()
+
+
+def test_start_without_a_seed_passes_no_rng(
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]]
+) -> None:
+    start = patch_start()
+    build_kwargs = start["build_app"]
+    assert isinstance(build_kwargs, dict)
+
+    result = runner.invoke(app, ["start", "spec.yaml"])
+
+    assert result.exit_code == 0
+    assert build_kwargs["rng"] is None

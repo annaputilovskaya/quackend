@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from typing import Any
 
@@ -11,7 +12,7 @@ from rich.console import Console
 from rich.markup import escape as escape_markup
 
 from quackend import __version__
-from quackend.loader import load_openapi
+from quackend.loader import SpecLoadError, load_openapi
 from quackend.reporting import render_route_table
 from quackend.server import build_app
 from quackend.store import QuackStore
@@ -83,7 +84,7 @@ def start(
     spec: str,
     port: int = typer.Option(8000, "--port", min=1, max=65535),
     host: str = typer.Option("127.0.0.1", "--host"),
-    latency: int = typer.Option(0, "--latency"),
+    latency: int = typer.Option(0, "--latency", min=0),
     fail_rate: float = typer.Option(0.0, "--fail-rate", min=0.0, max=1.0),
     seed: int | None = typer.Option(None, "--seed"),
     quiet: bool = typer.Option(False, "--quiet"),
@@ -110,13 +111,18 @@ def start(
     if not quiet:
         console.print(render_route_table(spec_data))
         typer.echo(f"quackend v{__version__}")
-    app_obj = build_app(
-        spec_data,
-        store,
-        latency_ms=latency,
-        fail_rate=fail_rate,
-        warn=_emit_warning,
-    )
+    try:
+        app_obj = build_app(
+            spec_data,
+            store,
+            latency_ms=latency,
+            fail_rate=fail_rate,
+            warn=_emit_warning,
+            rng=random.Random(seed) if seed is not None else None,
+        )
+    except (SpecLoadError, ValueError) as exc:
+        typer.echo(f"quackend: cannot serve {spec!r}: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
     if not quiet:
         typer.echo(f"Starting quackend on http://{host}:{port} (Ctrl+C to stop)")
     uvicorn.run(app_obj, host=host, port=port, log_level="warning" if quiet else "info")

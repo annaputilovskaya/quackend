@@ -1060,6 +1060,23 @@ def test_the_injected_rng_is_the_one_drawn_from() -> None:
     assert statuses == [200] * 5
 
 
+def test_the_default_rng_does_not_use_the_process_global_random(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    def tracking_random() -> float:
+        calls.append(1)
+        return 1.0
+
+    monkeypatch.setattr(random, "random", tracking_random)
+    client = TestClient(build_app(make_status_spec(), fail_rate=1.0))
+
+    client.get("/jobs/1")
+
+    assert calls == []
+
+
 def test_build_app_rejects_a_negative_latency() -> None:
     with pytest.raises(ValueError, match="latency_ms"):
         build_app(make_status_spec(), latency_ms=-1)
@@ -1076,6 +1093,32 @@ def test_build_app_with_non_mapping_info_raises_spec_load_error() -> None:
 
     with pytest.raises(SpecLoadError, match="str 'not an object'"):
         build_app(spec)
+
+
+def make_malformed_schema_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "broken", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {"schema": {"type": "object", "properties": []}}
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_build_app_names_the_resource_that_failed_to_generate() -> None:
+    with pytest.raises(SpecLoadError, match="resource 'items' failed to generate"):
+        build_app(make_malformed_schema_spec())
 
 
 def make_unservable_spec() -> dict[str, Any]:
@@ -1295,3 +1338,174 @@ def test_templated_get_returns_404_over_the_resource_cap(
     response = client.get("/orgs/orgA/members")
 
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_the_schema_surface_is_closed(path: str) -> None:
+    client, _ = make_client()
+
+    assert client.get(path).status_code == 404
+
+
+def test_a_cors_preflight_is_answered() -> None:
+    client, _ = make_client()
+
+    response = client.options(
+        "/users",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_a_cross_origin_response_carries_the_cors_header() -> None:
+    client, _ = make_client()
+
+    response = client.get("/users", headers={"Origin": "http://localhost:5173"})
+
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_cors_preflight_is_not_subject_to_simulated_failures() -> None:
+    client = TestClient(build_app(make_status_spec(), fail_rate=1.0))
+
+    response = client.options(
+        "/jobs",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"},
+    )
+
+    assert response.status_code != 500
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def make_write_spec(*, required: bool = True) -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "write", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "requestBody": {
+                        "required": required,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"name": {"type": "string"}},
+                                    "required": ["name"],
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "created",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "string"},
+                                            "name": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+
+def test_a_body_violating_the_request_schema_returns_422() -> None:
+    client = TestClient(build_app(make_write_spec()))
+
+    assert client.post("/items", json={"name": 123}).status_code == 422
+
+
+def test_a_body_missing_a_required_field_returns_422() -> None:
+    client = TestClient(build_app(make_write_spec()))
+
+    assert client.post("/items", json={}).status_code == 422
+
+
+def test_a_body_matching_the_request_schema_is_stored() -> None:
+    client = TestClient(build_app(make_write_spec()))
+
+    assert client.post("/items", json={"name": "quack"}).status_code == 201
+
+
+def test_a_missing_required_body_returns_422() -> None:
+    client = TestClient(build_app(make_write_spec()))
+
+    response = client.post("/items", content=b"", headers={"content-type": "application/json"})
+
+    assert response.status_code == 422
+
+
+def test_an_optional_body_may_be_empty() -> None:
+    client = TestClient(build_app(make_write_spec(required=False)))
+
+    response = client.post("/items", content=b"", headers={"content-type": "application/json"})
+
+    assert response.status_code == 201
+
+
+def test_a_nullable_field_accepts_null() -> None:
+    spec = make_write_spec()
+    schema = spec["paths"]["/items"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    schema["properties"]["name"] = {"type": "string", "nullable": True}
+
+    client = TestClient(build_app(spec))
+
+    assert client.post("/items", json={"name": None}).status_code == 201
+
+
+def test_an_openapi31_body_is_validated() -> None:
+    spec = make_write_spec()
+    spec["openapi"] = "3.1.0"  # 3.1 spells a nullable field as a type union
+    schema = spec["paths"]["/items"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    schema["properties"]["name"] = {"type": ["string", "null"]}
+
+    client = TestClient(build_app(spec))
+
+    assert client.post("/items", json={"name": None}).status_code == 201
+    assert client.post("/items", json={"name": 123}).status_code == 422
+
+
+def test_a_swagger2_body_is_validated() -> None:
+    spec = {
+        "swagger": "2.0",
+        "info": {"title": "t", "version": "1"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "parameters": [
+                        {
+                            "in": "body",
+                            "name": "body",
+                            "required": True,
+                            "schema": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string"}},
+                                "required": ["name"],
+                            },
+                        }
+                    ],
+                    "responses": {
+                        "201": {
+                            "description": "created",
+                            "schema": {"type": "object", "properties": {"id": {"type": "string"}}},
+                        }
+                    },
+                }
+            }
+        },
+    }
+    client = TestClient(build_app(spec))
+
+    assert client.post("/items", json={}).status_code == 422
+    assert client.post("/items", json={"name": "quack"}).status_code == 201

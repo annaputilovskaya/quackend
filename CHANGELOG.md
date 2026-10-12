@@ -36,6 +36,12 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   exception families that change between upstream releases. **Breaking**: a
   caller catching `prance.ValidationError` must catch `SpecLoadError` instead;
   the original exception is available as `__cause__`.
+- A wide-open CORS middleware (`allow_origins=["*"]`), so a browser front end can
+  call the mock directly. It is deliberate — the mock holds no session — and
+  documented in `SECURITY.md`.
+- Request bodies are validated against the operation's declared JSON schema with
+  `jsonschema` and `openapi-schema-validator` (Swagger 2.0, OpenAPI 3.0 and 3.1).
+  Only object bodies are accepted; a valid array or scalar body answers 400.
 
 ### Fixed
 
@@ -47,6 +53,13 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   traceback from `bind()`.
 - An unusable spec now exits with code 2 and a single stderr line naming the
   reason, instead of a traceback.
+- A spec that loads but cannot be served — an unsupportable verb, a malformed
+  schema a resource would fail to generate, or a non-object `info` — now exits
+  with code 2 and one stderr line naming the resource, instead of a traceback.
+  `--latency` rejects negative values with exit code 2 as well.
+- `--seed` also seeds simulated failures, so `--fail-rate` is reproducible for a
+  fixed seed. By default the mock now draws failures from a private random
+  source instead of the process-global `random` module.
 - `quackend start --quiet` no longer prints the route table. The flag promised to
   suppress banner output, and the table was printed on every start.
 - Every value that crosses the store boundary is a deep copy: mutating an item,
@@ -110,6 +123,12 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
 
 ### Changed
 
+- **Breaking**: a `POST`/`PUT`/`PATCH` body that violates the operation's
+  declared `requestBody` schema now answers 422 instead of being stored and
+  answered 2xx; a required body that is missing answers 422 too.
+- **Breaking**: `/docs`, `/redoc` and `/openapi.json` are disabled. Every spec
+  route was already hidden from the schema, so the served docs claimed "No
+  operations defined" and only widened the surface.
 - **Breaking**: `--quiet` no longer suppresses fail-soft warnings; it does only
   what the help and README promise (route table, version line, banner, uvicorn
   log level).
