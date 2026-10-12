@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from typing import Any
 
@@ -117,6 +118,7 @@ def start(
             latency_ms=latency,
             fail_rate=fail_rate,
             warn=_emit_warning,
+            rng=random.Random(seed) if seed is not None else None,
         )
     except (SpecLoadError, ValueError) as exc:
         typer.echo(f"quackend: cannot serve {spec!r}: {exc}", err=True)

@@ -51,6 +51,9 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   schema a resource would fail to generate, or a non-object `info` — now exits
   with code 2 and one stderr line naming the resource, instead of a traceback.
   `--latency` rejects negative values with exit code 2 as well.
+- `--seed` also seeds simulated failures, so `--fail-rate` is reproducible for a
+  fixed seed. By default the mock now draws failures from a private random
+  source instead of the process-global `random` module.
 - `quackend start --quiet` no longer prints the route table. The flag promised to
   suppress banner output, and the table was printed on every start.
 - Every value that crosses the store boundary is a deep copy: mutating an item,

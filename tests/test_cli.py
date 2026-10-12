@@ -1,4 +1,5 @@
 import json
+import random
 from collections.abc import Callable
 from pathlib import Path
 
@@ -327,3 +328,31 @@ def test_start_reports_an_unservable_spec_and_exits_2(
         "quackend: cannot serve 'spec.yaml': "
         "resource 'items' failed to generate: properties must be an object"
     )
+
+
+def test_start_seeds_simulated_failures_from_the_seed(
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]]
+) -> None:
+    start = patch_start()
+    build_kwargs = start["build_app"]
+    assert isinstance(build_kwargs, dict)
+
+    result = runner.invoke(app, ["start", "spec.yaml", "--seed", "42", "--fail-rate", "0.5"])
+
+    assert result.exit_code == 0
+    rng = build_kwargs["rng"]
+    assert isinstance(rng, random.Random)
+    assert rng.random() == random.Random(42).random()
+
+
+def test_start_without_a_seed_passes_no_rng(
+    runner: CliRunner, patch_start: Callable[..., dict[str, object]]
+) -> None:
+    start = patch_start()
+    build_kwargs = start["build_app"]
+    assert isinstance(build_kwargs, dict)
+
+    result = runner.invoke(app, ["start", "spec.yaml"])
+
+    assert result.exit_code == 0
+    assert build_kwargs["rng"] is None

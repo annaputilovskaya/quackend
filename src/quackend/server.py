@@ -395,7 +395,7 @@ def build_app(
 
     resolved_store = store if store is not None else QuackStore()
     emit = warn if warn is not None else _log_warn
-    draw: Callable[[], float] = rng.random if rng is not None else random.random
+    draw: Callable[[], float] = rng.random if rng is not None else random.Random().random
 
     operations = list(iter_operations(spec))
     _seed_resources(operations, resolved_store, emit)

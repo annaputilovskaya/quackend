@@ -1060,6 +1060,23 @@ def test_the_injected_rng_is_the_one_drawn_from() -> None:
     assert statuses == [200] * 5
 
 
+def test_the_default_rng_does_not_use_the_process_global_random(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    def tracking_random() -> float:
+        calls.append(1)
+        return 1.0
+
+    monkeypatch.setattr(random, "random", tracking_random)
+    client = TestClient(build_app(make_status_spec(), fail_rate=1.0))
+
+    client.get("/jobs/1")
+
+    assert calls == []
+
+
 def test_build_app_rejects_a_negative_latency() -> None:
     with pytest.raises(ValueError, match="latency_ms"):
         build_app(make_status_spec(), latency_ms=-1)
