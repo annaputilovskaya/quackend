@@ -479,3 +479,9 @@ def test_first_or_create_returns_none_over_the_resource_cap(
 
     assert store.first_or_create("two", "a", schema, warn=warned.append) is None
     assert warned == ["two: reached 1 resources; not creating more"]
+
+
+def test_store_reexports_schema_error() -> None:
+    from quackend.store import SchemaError
+
+    assert issubclass(SchemaError, ValueError)

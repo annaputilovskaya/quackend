@@ -1078,6 +1078,32 @@ def test_build_app_with_non_mapping_info_raises_spec_load_error() -> None:
         build_app(spec)
 
 
+def make_malformed_schema_spec() -> dict[str, Any]:
+    return {
+        "openapi": "3.0.0",
+        "info": {"title": "broken", "version": "1.0.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {"schema": {"type": "object", "properties": []}}
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_build_app_names_the_resource_that_failed_to_generate() -> None:
+    with pytest.raises(SpecLoadError, match="resource 'items' failed to generate"):
+        build_app(make_malformed_schema_spec())
+
+
 def make_unservable_spec() -> dict[str, Any]:
     return {
         "openapi": "3.0.0",

@@ -12,7 +12,7 @@ from faker import Faker
 
 _T = TypeVar("_T", int, float)
 
-__all__ = ["ARRAY_MAX", "DEPTH_LIMIT", "generate_object", "generate_value"]
+__all__ = ["ARRAY_MAX", "DEPTH_LIMIT", "SchemaError", "generate_object", "generate_value"]
 
 DEPTH_LIMIT = 3
 ARRAY_MAX = 5
@@ -49,6 +49,15 @@ _SCALAR_PRODUCERS: dict[str, _ScalarProducer] = {
     "boolean": lambda schema, fake, emit: fake.boolean(),
     "string": lambda schema, fake, emit: _string_value(schema, fake, emit),
 }
+
+
+class SchemaError(ValueError):
+    """A schema fragment that is structurally malformed and cannot be generated."""
+
+
+def _mapping_list(value: object) -> bool:
+    """Report whether a value is a JSON array of objects."""
+    return isinstance(value, list) and all(isinstance(item, Mapping) for item in value)
 
 
 def _no_warn(_message: str) -> None:
@@ -176,9 +185,12 @@ def _object_value(
             f"instead of {sorted(schema.get('properties') or {})}"
         )
         return {}
+    properties = schema.get("properties")
+    if properties is not None and not isinstance(properties, Mapping):
+        raise SchemaError(f"properties must be an object, got {type(properties).__name__}")
     return {
         name: _generate_value(sub_schema, fake, depth + 1, emit, depth_limit, array_max)
-        for name, sub_schema in (schema.get("properties") or {}).items()
+        for name, sub_schema in (properties or {}).items()
     }
 
 
@@ -211,6 +223,11 @@ def _composite_value(
     Branch order matches the historical cascade: ``oneOf``/``anyOf`` win over
     ``allOf`` when a schema declares both.
     """
+    raw_branches = schema.get("oneOf") if "oneOf" in schema else schema.get("anyOf")
+    if raw_branches is not None and not _mapping_list(raw_branches):
+        raise SchemaError(
+            f"oneOf/anyOf must be a list of objects, got {type(raw_branches).__name__}"
+        )
     if "oneOf" in schema or "anyOf" in schema:
         branches: list[dict[str, Any]] = schema.get("oneOf") or schema.get("anyOf") or []
         if not branches:
@@ -235,7 +252,10 @@ def _merged_all_of(
     array_max: int,
 ) -> Any:
     """Merge every ``allOf`` branch (or take the one with an example) and generate."""
-    all_branches: list[dict[str, Any]] = schema["allOf"]
+    raw_branches = schema.get("allOf")
+    if not _mapping_list(raw_branches):
+        raise SchemaError(f"allOf must be a list of objects, got {type(raw_branches).__name__}")
+    all_branches: list[dict[str, Any]] = raw_branches  # type: ignore[assignment]
     example_branch = next((b for b in all_branches if b.get("example") is not None), None)
     if example_branch is not None:
         return _generate_value(example_branch, fake, depth + 1, emit, depth_limit, array_max)

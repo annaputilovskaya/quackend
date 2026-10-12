@@ -13,6 +13,7 @@ from quackend.generator import (
     _DEFAULT_INTEGER_SPAN,
     ARRAY_MAX,
     DEPTH_LIMIT,
+    SchemaError,
     _exclusive_shift,
     _inclusive_float,
     _inclusive_int,
@@ -592,3 +593,23 @@ def test_generate_value_string_schema_raises_value_error(fake: Faker) -> None:
 
     with pytest.raises(ValueError, match="str 'text'"):
         generate_value(text_schema, fake)
+
+
+def test_generate_value_refuses_non_object_properties(fake: Faker) -> None:
+    with pytest.raises(SchemaError, match="properties must be an object"):
+        generate_value({"type": "object", "properties": []}, fake)
+
+
+def test_generate_value_refuses_non_list_all_of(fake: Faker) -> None:
+    with pytest.raises(SchemaError, match="allOf must be a list of objects"):
+        generate_value({"type": "object", "allOf": 5}, fake)
+
+
+def test_generate_value_refuses_non_list_composite(fake: Faker) -> None:
+    with pytest.raises(SchemaError, match="oneOf/anyOf must be a list of objects"):
+        generate_value({"oneOf": "x"}, fake)
+
+
+def test_generate_value_accepts_well_formed_composites(fake: Faker) -> None:
+    assert isinstance(generate_value({"allOf": [{"type": "object"}]}, fake), dict)
+    assert isinstance(generate_value({"oneOf": [{"type": "object"}]}, fake), dict)

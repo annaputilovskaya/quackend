@@ -47,6 +47,10 @@ still `0.x`: the public API may change in a minor release until `1.0.0`.
   traceback from `bind()`.
 - An unusable spec now exits with code 2 and a single stderr line naming the
   reason, instead of a traceback.
+- A spec that loads but cannot be served — an unsupportable verb, a malformed
+  schema a resource would fail to generate, or a non-object `info` — now exits
+  with code 2 and one stderr line naming the resource, instead of a traceback.
+  `--latency` rejects negative values with exit code 2 as well.
 - `quackend start --quiet` no longer prints the route table. The flag promised to
   suppress banner output, and the table was printed on every start.
 - Every value that crosses the store boundary is a deep copy: mutating an item,

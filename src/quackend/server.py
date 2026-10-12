@@ -21,7 +21,7 @@ from quackend.loader import (
     parse_route,
     resolve_resource,
 )
-from quackend.store import QuackStore, StoreProtocol
+from quackend.store import QuackStore, SchemaError, StoreProtocol
 
 _MAX_BODY_BYTES = 1_048_576
 
@@ -113,7 +113,12 @@ def _seed_resources(
         # _bind_resource instead of once per spec at startup.
         if is_templated(operation.resource):
             continue
-        store.ensure(operation.resource, operation.item_schema, warn=warn)
+        try:
+            store.ensure(operation.resource, operation.item_schema, warn=warn)
+        except SchemaError as exc:
+            raise SpecLoadError(
+                f"resource {operation.resource!r} failed to generate: {exc}"
+            ) from exc
 
 
 async def _handle_get(
